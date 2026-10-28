@@ -17,11 +17,20 @@ static uint32_t now_ms() {
 
 int main() {
     StdoutDisplay display;
-    SimpleTui<10, 5> tui(display);
+    SimpleTui<34, 11> tui(display);
 
-    static Panel<Text, Text> root{
-        Text{"hello scrolling world"},
-        Text{"second line"}};
+    using Panel2 = Panel<Text, Text>;
+
+    const auto root = Column {
+      Panel {
+        Text{"hello"},
+        Text{"world"}
+      },
+      Panel {
+        Text{"ttt"},
+        Text{"xxx"}
+      }
+    };
 
     tui.setScreen(root);
 

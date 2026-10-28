@@ -151,14 +151,40 @@ TEST_CASE("Column stacks children vertically") {
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Row measure is sum width by max height") {
+TEST_CASE("Column shrinks fill children so it never exceeds its assigned height") {
+    stui::Column<stui::Panel<stui::Text>, stui::Panel<stui::Text>> col{
+        stui::Panel<stui::Text>{stui::Text{"a"}},
+        stui::Panel<stui::Text>{stui::Text{"b"}}};
+
+    col.measure(5, 6);
+    CHECK(col.measured_width() == 5);
+    CHECK(col.measured_height() == 6); // clamped to the available height
+
+    col.layout(0, 0, 5, 6);
+
+    TestDisplay display;
+    col.render(display);
+
+    // 6 tall -> 3 per panel, stacked.
+    const std::vector<std::string> expected = {
+        "┌───┐",
+        "│a  │",
+        "└───┘",
+        "┌───┐",
+        "│b  │",
+        "└───┘",
+    };
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Row measure is sum width plus spacing by max height") {
     stui::Row<stui::Text, stui::Text> row{stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
-    CHECK(row.measured_width() == 4);
+    CHECK(row.measured_width() == 5); // 2 + 1 (default spacing) + 2
     CHECK(row.measured_height() == 1);
 }
 
-TEST_CASE("Row places children horizontally") {
+TEST_CASE("Row places children horizontally with one space by default") {
     stui::Row<stui::Text, stui::Text> row{stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
     row.layout(0, 0, 80, 1);
@@ -166,7 +192,43 @@ TEST_CASE("Row places children horizontally") {
     TestDisplay display;
     row.render(display);
 
-    const std::vector<std::string> expected = {"abcd"};
+    const std::vector<std::string> expected = {"ab cd"};
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Row custom spacing separates children") {
+    stui::Row<stui::Text, stui::Text> row{2, stui::Text{"ab"}, stui::Text{"cd"}};
+    row.measure(80, 24);
+    CHECK(row.measured_width() == 6); // 2 + 2 (spacing) + 2
+    row.layout(0, 0, 6, 1);
+
+    TestDisplay display;
+    row.render(display);
+
+    const std::vector<std::string> expected = {"ab  cd"};
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Row shrinks fill children so it never exceeds its assigned width") {
+    stui::Row<stui::Panel<stui::Text>, stui::Panel<stui::Text>> row{
+        4,
+        stui::Panel<stui::Text>{stui::Text{"a"}},
+        stui::Panel<stui::Text>{stui::Text{"b"}}};
+
+    row.measure(10, 3);
+    CHECK(row.measured_width() == 10); // clamped to the available width
+
+    row.layout(0, 0, 10, 3);
+
+    TestDisplay display;
+    row.render(display);
+
+    // 10 wide, 4 spacing -> 3 per panel; second starts at x = 7.
+    const std::vector<std::string> expected = {
+        "┌─┐    ┌─┐",
+        "│a│    │b│",
+        "└─┘    └─┘",
+    };
     CHECK(display.lines() == expected);
 }
 

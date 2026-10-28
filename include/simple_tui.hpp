@@ -26,6 +26,17 @@ inline constexpr const char* glyph_ellipsis     = "\xE2\x80\xA6"; // … U+2026
 
 inline uint16_t max_u16(uint16_t a, uint16_t b) { return a > b ? a : b; }
 
+// Shrink one child's measured size proportionally when all children together
+// don't fit the space the parent assigned to them.
+inline uint16_t fit_dimension(uint16_t desired, uint16_t total, uint16_t avail) {
+    if (total == 0 || desired == 0)
+        return 0;
+    if (total <= avail)
+        return desired;
+    return static_cast<uint16_t>(
+        static_cast<uint32_t>(desired) * avail / total);
+}
+
 inline void draw_rect(const Display& d, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     if (w < 2 || h < 2) return;
 
@@ -155,15 +166,21 @@ public:
               total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
         }, children_);
         mw_ = max_w;
-        mh_ = total_h;
+        mh_ = (total_h > avail_h) ? avail_h : total_h;
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
         x_ = x; y_ = y; w_ = w; h_ = h;
+
+        uint16_t total_h = 0;
+        std::apply([&](const auto&... c) {
+            ((total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
+        }, children_);
+
         uint16_t cy = y;
         std::apply([&](const auto&... c) {
-            ((c.layout(x, cy, w, c.measured_height()),
-              cy = static_cast<uint16_t>(cy + c.measured_height())), ...);
+            ((c.layout(x, cy, w, fit_dimension(c.measured_height(), total_h, h)),
+              cy = static_cast<uint16_t>(cy + fit_dimension(c.measured_height(), total_h, h))), ...);
         }, children_);
     }
 
@@ -182,25 +199,40 @@ private:
 template <typename... Children>
 class Row : public Widget {
 public:
-    Row(const Children&... children) : children_(children...) {}
+    explicit Row(const Children&... children) : Row(1, children...) {}
+
+    Row(uint16_t spacing, const Children&... children)
+        : spacing_(spacing), children_(children...) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
-        uint16_t total_w = 0, max_h = 0;
+        uint16_t total_w = 0, max_h = 0, count = 0;
         std::apply([&](const auto&... c) {
             ((c.measure(avail_w, avail_h),
               total_w = static_cast<uint16_t>(total_w + c.measured_width()),
-              max_h = max_u16(max_h, c.measured_height())), ...);
+              max_h = max_u16(max_h, c.measured_height()),
+              ++count), ...);
         }, children_);
-        mw_ = total_w;
+        if (count > 1)
+            total_w = static_cast<uint16_t>(total_w + spacing_ * (count - 1));
+        mw_ = (total_w > avail_w) ? avail_w : total_w;
         mh_ = max_h;
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
         x_ = x; y_ = y; w_ = w; h_ = h;
+
+        uint16_t total_w = 0, count = 0;
+        std::apply([&](const auto&... c) {
+            ((total_w = static_cast<uint16_t>(total_w + c.measured_width()),
+              ++count), ...);
+        }, children_);
+        const uint16_t gaps = (count > 1) ? static_cast<uint16_t>(spacing_ * (count - 1)) : 0;
+        const uint16_t avail = (w > gaps) ? static_cast<uint16_t>(w - gaps) : 0;
+
         uint16_t cx = x;
         std::apply([&](const auto&... c) {
-            ((c.layout(cx, y, c.measured_width(), h),
-              cx = static_cast<uint16_t>(cx + c.measured_width())), ...);
+            ((c.layout(cx, y, fit_dimension(c.measured_width(), total_w, avail), h),
+              cx = static_cast<uint16_t>(cx + fit_dimension(c.measured_width(), total_w, avail) + spacing_)), ...);
         }, children_);
     }
 
@@ -213,6 +245,7 @@ public:
     }
 
 private:
+    uint16_t spacing_ = 1;
     std::tuple<const Children...> children_;
 };
 

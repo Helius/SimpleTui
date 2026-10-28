@@ -47,8 +47,12 @@ simple-tui/
     with a three-space gap followed by the beginning of the string.
   - `Column` / `Row` — containers storing children **by value** in
     `std::tuple<const Children...>` (no heap). `Column` stacks vertically
-    (`max width × sum height`), `Row` places horizontally
-    (`sum width × max height`).
+    (`max width × sum height`), `Row` places horizontally at a fixed `spacing`
+    (total width = sum of child widths + spacing between neighbours, height =
+    max child height). `Row` takes the spacing as an optional first argument
+    (`Row{2, Text{"a"}, Text{"b"}}`, default `1`). Both containers clamp their
+    measured extent to the available space and shrink oversized children
+    proportionally, so fill widgets like `Panel` stay on screen.
   - `Panel` — a bordered container that **fills its parent** and stacks its
     children vertically inside the border. Use it as an outer frame around
     other widgets.

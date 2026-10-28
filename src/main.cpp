@@ -1,47 +1,40 @@
 #include <simple_tui.hpp>
 
-#include <cstdio>
-#include <string>
-#include <vector>
+#include "terminal_display.hpp"
+
+#include <atomic>
+#include <chrono>
+#include <thread>
 
 using namespace stui;
 
-class StdoutDisplay : public Display {
-public:
-    void print(uint16_t x, uint16_t y, const char* str) const override {
-        if (buffer.size() <= y)
-            buffer.resize(y + 1);
-        auto& row = buffer[y];
-        if (row.size() <= x)
-            row.resize(x + 1, " ");
-        row[x] = (str != nullptr) ? str : "";
-    }
-
-    void dump() const {
-        for (const auto& row : buffer) {
-            std::string s;
-            for (const auto& cell : row)
-                s += cell;
-            std::printf("%s\n", s.c_str());
-        }
-    }
-
-    mutable std::vector<std::vector<std::string>> buffer;
-};
+static uint32_t now_ms() {
+    auto now = std::chrono::steady_clock::now();
+    return static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            now.time_since_epoch()).count());
+}
 
 int main() {
     StdoutDisplay display;
     SimpleTui<10, 5> tui(display);
 
-    const auto screen = Panel
-    {
-      Text{"hello"}, 
-      Text{"world"},
-      Text{"very long string that should be scrolled"}
-    }; 
+    static Panel<Text, Text> root{
+        Text{"hello scrolling world"},
+        Text{"second line"}};
 
-    tui.setScreen(screen);
+    tui.setScreen(root);
 
-    display.dump();
+    std::atomic<bool> running{true};
+    std::thread worker([&] {
+        while (running.load()) {
+            tui.loop(now_ms());
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2600));
+    worker.join();
+
     return 0;
 }

@@ -4,11 +4,16 @@
 #include <simple_tui.hpp>
 #include <stdint.h>
 
+#include <sstream>
 #include <string>
 #include <vector>
 
+#include "terminal_display.hpp"
+
 class TestDisplay : public stui::Display {
 public:
+    void clear() const override { clear_count++; }
+
     void print(uint16_t x, uint16_t y, const char* str) const override {
         if (buffer.size() <= y)
             buffer.resize(y + 1);
@@ -29,8 +34,48 @@ public:
         return out;
     }
 
+    void reset() const { buffer.clear(); }
+
     mutable std::vector<std::vector<std::string>> buffer;
+    mutable int clear_count = 0;
 };
+
+// ---------------------------------------------------------------------------
+// StdoutDisplay — ANSI output backend
+// ---------------------------------------------------------------------------
+
+TEST_CASE("StdoutDisplay::clear wipes the terminal and homes the cursor") {
+    StdoutDisplay display;
+    std::ostringstream out;
+    std::streambuf* old = std::cout.rdbuf(out.rdbuf());
+
+    display.clear();
+
+    std::cout.rdbuf(old);
+    CHECK(out.str() == "\x1b[2J\x1b[H");
+}
+
+TEST_CASE("StdoutDisplay::print moves the cursor to x,y and prints only that string") {
+    StdoutDisplay display;
+    std::ostringstream out;
+    std::streambuf* old = std::cout.rdbuf(out.rdbuf());
+
+    display.print(3, 2, "hi");
+
+    std::cout.rdbuf(old);
+    CHECK(out.str() == "\x1b[3;4Hhi");
+}
+
+TEST_CASE("StdoutDisplay::print emits no text for a null string") {
+    StdoutDisplay display;
+    std::ostringstream out;
+    std::streambuf* old = std::cout.rdbuf(out.rdbuf());
+
+    display.print(0, 0, nullptr);
+
+    std::cout.rdbuf(old);
+    CHECK(out.str() == "\x1b[1;1H");
+}
 
 TEST_CASE("Text measure sets width to length and height to one") {
     stui::Text t{"hello"};
@@ -148,6 +193,78 @@ TEST_CASE("Panel draws a border and renders its children inside") {
     CHECK(display.lines() == expected);
 }
 
+TEST_CASE("Text scroll loops past the end with a gap before the start") {
+    stui::Text t{"long string with end"};
+    t.measure(14, 1);
+    t.layout(0, 0, 14, 1);
+    t.setScroll(17);
+
+    TestDisplay display;
+    t.render(display);
+
+    // "long string with end", window 14: tail "end", 3-space gap, then "long str".
+    const std::vector<std::string> expected = {"end   long str"};
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Text tick advances scroll and loops through the gap") {
+    stui::Text t{"abcdef"};
+    t.measure(3, 1);
+    t.layout(0, 0, 3, 1);
+
+    CHECK(t.scroll() == 0);
+    t.tick();
+    CHECK(t.scroll() == 1);
+    t.tick();
+    CHECK(t.scroll() == 2);
+    for (int i = 0; i < 3; ++i) t.tick();
+    CHECK(t.scroll() == 5);
+    // "abcdef" + a three-space gap is a 9-step loop.
+    t.tick();
+    CHECK(t.scroll() == 6);
+    t.tick();
+    CHECK(t.scroll() == 7);
+    t.tick();
+    CHECK(t.scroll() == 8);
+    t.tick();
+    CHECK(t.scroll() == 0);
+}
+
+TEST_CASE("Text tick stays at zero when the text fits its box") {
+    stui::Text t{"hi"};
+    t.measure(3, 1);
+    t.layout(0, 0, 3, 1);
+
+    t.tick();
+    CHECK(t.scroll() == 0);
+}
+
+TEST_CASE("SimpleTui::loop redraws only after the 500 ms interval and animates") {
+    TestDisplay display;
+    stui::SimpleTui<3, 1> tui(display);
+    stui::Text t{"abcdef"};
+
+    tui.setScreen(t);
+    CHECK(display.lines() == std::vector<std::string>{"ab\xE2\x80\xA6"});
+    CHECK(t.scroll() == 0);
+
+    display.reset();
+    tui.loop(0);
+    CHECK(display.lines().empty());
+    tui.loop(400);
+    CHECK(display.lines().empty());
+    CHECK(t.scroll() == 0);
+
+    tui.loop(500);
+    CHECK(t.scroll() == 1);
+    CHECK(display.lines() == std::vector<std::string>{"bc\xE2\x80\xA6"});
+
+    display.reset();
+    tui.loop(600);
+    CHECK(display.lines().empty());
+    CHECK(t.scroll() == 1);
+}
+
 TEST_CASE("Screen forwards measure, layout and render to its root") {
     stui::Column<stui::Text, stui::Text> root{stui::Text{"hi"}, stui::Text{"yo"}};
     stui::Screen screen{root};
@@ -173,6 +290,15 @@ TEST_CASE("SimpleTui::setScreen lays out and renders a screen") {
 
     const std::vector<std::string> expected = {"hi", "yo"};
     CHECK(display.lines() == expected);
+}
+
+TEST_CASE("SimpleTui constructor clears the display") {
+    TestDisplay display;
+    CHECK(display.clear_count == 0);
+
+    stui::SimpleTui<10, 5> tui(display);
+
+    CHECK(display.clear_count == 1);
 }
 
 TEST_CASE("SimpleTui::drawRect draws a rectangle") {

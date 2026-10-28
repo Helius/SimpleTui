@@ -1,8 +1,3 @@
-// test_simple_tui.cpp — tests for the header-only library.
-//
-// Pattern: a data table (input + expected result) iterated with SUBCASE,
-// so doctest reports each row individually when it fails.
-
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
@@ -12,55 +7,82 @@
 #include <string>
 #include <vector>
 
-// ---------------------------------------------------------------------------
-// Mock Display that records every print() call.
-// ---------------------------------------------------------------------------
 class TestDisplay : public simple_tui::Display {
 public:
     void print(uint16_t x, uint16_t y, const char* str) const override {
-        last_x = x;
-        last_y = y;
-        last_str = str ? str : "";
-        call_count++;
+        if (buffer.size() <= y)
+            buffer.resize(y + 1);
+        auto& row = buffer[y];
+        if (row.size() <= x)
+            row.resize(x + 1, " ");
+        row[x] = (str != nullptr) ? str : "";
     }
 
-    void clearScreen() const override {
-        clear_count++;
+    std::vector<std::string> lines() const {
+        std::vector<std::string> out;
+        for (const auto& row : buffer) {
+            std::string s;
+            for (const auto& cell : row)
+                s += cell;
+            out.push_back(s);
+        }
+        return out;
     }
 
-    // mutable so const print() can write — test inspection only.
-    mutable uint16_t last_x = 0;
-    mutable uint16_t last_y = 0;
-    mutable std::string last_str;
-    mutable int call_count = 0;
-    mutable int clear_count = 0;
+    mutable std::vector<std::vector<std::string>> buffer;
 };
 
-// ---------------------------------------------------------------------------
-// SimpleTui — template dimensions
-// ---------------------------------------------------------------------------
-
-TEST_CASE("SimpleTui<80,24>: getters return template dimensions") {
+TEST_CASE("SimpleTui constructor draws the border") {
     TestDisplay display;
-    simple_tui::SimpleTui<80, 24> tui(display);
-    CHECK(tui.width()  == 80);
-    CHECK(tui.height() == 24);
+    simple_tui::SimpleTui<5, 4> tui(display);
+
+    const std::vector<std::string> expected = {
+        "┌───┐",
+        "│   │",
+        "│   │",
+        "└───┘",
+    };
+
+    CHECK(display.lines() == expected);
 }
 
-// ---------------------------------------------------------------------------
-// SimpleTui — constructor clears the display
-// ---------------------------------------------------------------------------
-
-TEST_CASE("SimpleTui: constructor calls Display::clearScreen") {
+TEST_CASE("SimpleTui::drawRect draws a rectangle at an offset") {
     TestDisplay display;
-    CHECK(display.clear_count == 0);
+    simple_tui::SimpleTui<7, 5> tui(display);
 
-    simple_tui::SimpleTui<80, 24> tui(display);
+    tui.drawRect(2, 1, 3, 3);
 
-    CHECK(display.clear_count == 1);
+    const std::vector<std::string> expected = {
+        "┌─────┐",
+        "│ ┌─┐ │",
+        "│ │ │ │",
+        "│ └─┘ │",
+        "└─────┘",
+    };
+
+    CHECK(display.lines() == expected);
 }
 
-// Compile-time check.
-static_assert(simple_tui::SimpleTui<80, 24>::width()  == 80, "width compile-time");
-static_assert(simple_tui::SimpleTui<80, 24>::height() == 24, "height compile-time");
+TEST_CASE("SimpleTui::print renders into the grid") {
+    TestDisplay display;
+    simple_tui::SimpleTui<5, 4> tui(display);
 
+    tui.print(2, 1, "X");
+
+    const std::vector<std::string> expected = {
+        "┌───┐",
+        "│ X │",
+        "│   │",
+        "└───┘",
+    };
+
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("SimpleTui skips drawing for degenerate sizes") {
+    TestDisplay display;
+    simple_tui::SimpleTui<1, 1> tui(display);
+    (void) tui;
+
+    CHECK(display.lines().empty());
+}

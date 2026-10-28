@@ -25,20 +25,50 @@ simple-tui/
 
 ### Components
 
-- **`include/simple_tui.hpp`** — the library.
+- **`include/simple_tui.hpp`** — the library (namespace `stui`).
   - `Display` — pure interface (`void print(uint16_t x, uint16_t y, const char* str)`)
     used as an output backend (LCD, OLED, Serial, terminal, ...). It prints one
     cell at a time; multi-byte UTF-8 strings (box-drawing characters) are passed
     through whole.
-  - `SimpleTui<Width, Height>` — dimensions are compile-time template
-    parameters; holds a `const Display&` injected via the constructor. The
-    constructor draws a border via `drawRect(0, 0, Width, Height)`, and
-    `drawRect(x, y, width, height)` can draw further rectangles anywhere.
-    `print` forwards a cell to the backend.
-- **`src/main.cpp`** — a small runnable binary with a stub `Display`, useful for
-  poking at library behaviour by hand.
-- **`tests/test_simple_tui.cpp`** — doctest unit tests, including a `TestDisplay`
-  mock that records calls, and a data-table parameterized test pattern.
+  - `Widget` — abstract base for the declarative tree. Every widget implements
+    `measure(avail_w, avail_h)`, `layout(x, y, w, h)` and `render(Display&)`;
+    all three are `const` and use `mutable` state, so a `const Widget&` can
+    still be measured, laid out and animated (properties stay live).
+  - `Text` — a leaf that measures to `strlen × 1`, renders char-by-char, elides
+    with `…` when wider than its box, and supports `setScroll(offset)`.
+  - `Column` / `Row` — containers storing children **by value** in
+    `std::tuple<const Children...>` (no heap). `Column` stacks vertically
+    (`max width × sum height`), `Row` places horizontally
+    (`sum width × max height`).
+  - `Panel` — a bordered container that **fills its parent** and stacks its
+    children vertically inside the border. Use it as an outer frame around
+    other widgets.
+  - `Screen` — wraps a `const Widget&` root and forwards the three passes. No
+    template arguments needed, since screens are always handled polymorphically.
+  - `SimpleTui<Width, Height>` — render-only entry point. `setScreen(const Widget&)`
+    measures and lays the screen into the terminal and renders it; `loop()` is
+    the per-iteration hook reserved for animation/scrolling. `drawRect(...)`
+    draws a box.
+- **`src/main.cpp`** — a small runnable binary with a `StdoutDisplay`, building
+  a `Screen { Panel { Text, Text } }` tree and dumping the result.
+- **`tests/test_simple_tui.cpp`** — doctest unit tests with a `TestDisplay`
+  grid mock that records every printed cell.
+
+### Declarative layout
+
+```cpp
+SimpleTui<10, 5> tui(display);
+
+tui.setScreen(Panel{Text{"hello"}, Text{"world"}});
+```
+
+`setScreen` takes a `const Widget&`, so a temporary tree is fine — it is measured,
+laid out and rendered during the call. For a screen you keep around, store the
+root (e.g. a `static`) and wrap it in a `Screen`, or pass it directly.
+
+Rendering is a two-pass pipeline: `measure` computes desired sizes bottom-up,
+`layout` assigns boxes top-down, then `render` draws. A separate `Navigator`
+class (future work) will own the screen graph and drive `setScreen`.
 
 ## Testing
 

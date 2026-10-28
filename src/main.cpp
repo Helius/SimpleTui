@@ -4,7 +4,9 @@
 #include <string>
 #include <vector>
 
-class StdoutDisplay : public simple_tui::Display {
+using namespace stui;
+
+class StdoutDisplay : public Display {
 public:
     void print(uint16_t x, uint16_t y, const char* str) const override {
         if (buffer.size() <= y)
@@ -29,9 +31,17 @@ public:
 
 int main() {
     StdoutDisplay display;
-    simple_tui::SimpleTui<10, 5> tui(display);
+    SimpleTui<10, 5> tui(display);
 
-    tui.print(2, 2, "X");
+    const auto screen = Panel
+    {
+      Text{"hello"}, 
+      Text{"world"},
+      Text{"very long string that should be scrolled"}
+    }; 
+
+    tui.setScreen(screen);
+
     display.dump();
     return 0;
 }

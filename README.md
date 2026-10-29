@@ -56,8 +56,9 @@ simple-tui/
     allocates rows sequentially and gives every non-empty child at least one
     row, so a one-line `Text` before fill panels is not rounded away.
   - `Panel` — a bordered container that **fills its parent** and stacks its
-    children vertically inside the border. Use it as an outer frame around
-    other widgets.
+    children vertically inside the border. Children are allocated within the
+    interior height (above the bottom border), shrinking fill children as
+    needed. Use it as an outer frame around other widgets.
   - `Screen` — wraps a `const Widget&` root and forwards the three passes. No
     template arguments needed, since screens are always handled polymorphically.
   - `SimpleTui<Width, Height>` — render-only entry point. `setScreen(Widget&)`

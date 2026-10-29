@@ -38,6 +38,38 @@ inline uint16_t fit_dimension(uint16_t desired, uint16_t total, uint16_t avail) 
         static_cast<uint32_t>(desired) * avail / total);
 }
 
+// Lay children out top-to-bottom in the given box. Heights are allocated
+// sequentially from the remaining budget, and a non-empty child always gets
+// at least one row, so small content children are never rounded to zero and
+// overlapped by a following fill child.
+template <typename Tuple>
+inline void layout_vertically(const Tuple& children, uint16_t x, uint16_t y,
+                              uint16_t w, uint16_t h) {
+    uint16_t total_h = 0;
+    std::apply([&](const auto&... c) {
+        ((total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
+    }, children);
+
+    uint16_t cy = y;
+    uint16_t remaining = h;
+    uint16_t remaining_desired = total_h;
+    auto place = [&](const auto& c) {
+        uint16_t desired = c.measured_height();
+        uint16_t share = fit_dimension(desired, remaining_desired, remaining);
+        if (desired > 0 && share == 0 && remaining > 0)
+            share = 1;
+        if (share > remaining)
+            share = remaining;
+        c.layout(x, cy, w, share);
+        cy = static_cast<uint16_t>(cy + share);
+        remaining = static_cast<uint16_t>(remaining - share);
+        remaining_desired = (remaining_desired > desired)
+                                ? static_cast<uint16_t>(remaining_desired - desired)
+                                : 0;
+    };
+    std::apply([&](const auto&... c) { (place(c), ...); }, children);
+}
+
 inline void draw_rect(const Display& d, uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
     if (w < 2 || h < 2) return;
 
@@ -172,33 +204,7 @@ public:
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
         x_ = x; y_ = y; w_ = w; h_ = h;
-
-        uint16_t total_h = 0;
-        std::apply([&](const auto&... c) {
-            ((total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
-        }, children_);
-
-        // Allocate sequentially from what is left, so a small content child
-        // (e.g. a one-line Text) is never rounded down to zero height and
-        // overlapped by a following fill child (e.g. a Panel).
-        uint16_t cy = y;
-        uint16_t remaining = h;
-        uint16_t remaining_desired = total_h;
-        auto place = [&](const auto& c) {
-            uint16_t desired = c.measured_height();
-            uint16_t share = fit_dimension(desired, remaining_desired, remaining);
-            if (desired > 0 && share == 0 && remaining > 0)
-                share = 1;
-            if (share > remaining)
-                share = remaining;
-            c.layout(x, cy, w, share);
-            cy = static_cast<uint16_t>(cy + share);
-            remaining = static_cast<uint16_t>(remaining - share);
-            remaining_desired = (remaining_desired > desired)
-                                    ? static_cast<uint16_t>(remaining_desired - desired)
-                                    : 0;
-        };
-        std::apply([&](const auto&... c) { (place(c), ...); }, children_);
+        layout_vertically(children_, x, y, w, h);
     }
 
     void render(const Display& d) const override {
@@ -282,12 +288,10 @@ public:
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
         x_ = x; y_ = y; w_ = w; h_ = h;
         uint16_t ix = static_cast<uint16_t>(x + 1);
+        uint16_t iy = static_cast<uint16_t>(y + 1);
         uint16_t iw = (w > 2) ? static_cast<uint16_t>(w - 2) : 0;
-        uint16_t cy = static_cast<uint16_t>(y + 1);
-        std::apply([&](const auto&... c) {
-            ((c.layout(ix, cy, iw, c.measured_height()),
-              cy = static_cast<uint16_t>(cy + c.measured_height())), ...);
-        }, children_);
+        uint16_t ih = (h > 2) ? static_cast<uint16_t>(h - 2) : 0;
+        layout_vertically(children_, ix, iy, iw, ih);
     }
 
     void render(const Display& d) const override {

@@ -292,6 +292,30 @@ TEST_CASE("Panel draws a border and renders its children inside") {
     CHECK(display.lines() == expected);
 }
 
+TEST_CASE("Panel fits children inside its interior, above the bottom border") {
+    stui::Panel<stui::Text, stui::Panel<stui::Text>> panel{
+        stui::Text{"title"},
+        stui::Panel<stui::Text>{stui::Text{"abc"}}};
+
+    // Interior is 8x4, but the children measure 1 + 4 = 5 rows: the inner
+    // panel must shrink to 3 rows instead of covering the outer bottom border.
+    panel.measure(10, 6);
+    panel.layout(0, 0, 10, 6);
+
+    TestDisplay display;
+    panel.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌────────┐",
+        "│title   │",
+        "│┌──────┐│",
+        "││abc   ││",
+        "│└──────┘│",
+        "└────────┘",
+    };
+    CHECK(display.lines() == expected);
+}
+
 TEST_CASE("Text scroll loops past the end with a gap before the start") {
     stui::Text t{"long string with end"};
     t.measure(14, 1);

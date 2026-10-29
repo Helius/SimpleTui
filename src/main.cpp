@@ -32,11 +32,17 @@ int main() {
           },
           Panel{
             Text{"x: 0"},
-            Text{"y: 0"}
+            Text{"y: 0"},
+            // Text{"z: 0"}
           },
         },
         Panel{
-          Text{distance}
+          Text{distance},
+          Text{"tempr: 10"},
+          Text{"press: 1013 hPa"},
+          Text{"humidity: 50%"},
+          Text{"UV: normal"},
+          Text{"uptime: 1234 s"}
         }
       }
     };
@@ -47,7 +53,7 @@ int main() {
     std::thread worker([&] {
         while (running.load()) {
             snprintf(distance, sizeof(distance), "dist: %d mm", counter);
-            tui.loop(now_ms());
+            // tui.loop(now_ms());
             counter++;
             std::this_thread::sleep_for(std::chrono::milliseconds(177));
         }

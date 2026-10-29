@@ -29,6 +29,18 @@ public:
                   << std::flush;
     }
 
+    void setColors(const stui::Colors& colors) const override {
+        std::cout << "\x1b[38;2;"
+                  << static_cast<unsigned>(colors.fg.r) << ';'
+                  << static_cast<unsigned>(colors.fg.g) << ';'
+                  << static_cast<unsigned>(colors.fg.b) << 'm'
+                  << "\x1b[48;2;"
+                  << static_cast<unsigned>(colors.bg.r) << ';'
+                  << static_cast<unsigned>(colors.bg.g) << ';'
+                  << static_cast<unsigned>(colors.bg.b) << 'm'
+                  << std::flush;
+    }
+
     void print(uint16_t x, uint16_t y, const char* str) const override {
         // ANSI cursor positions are 1-based: ESC [ row ; column H
         std::cout << "\x1b[" << (static_cast<unsigned>(y) + 1)

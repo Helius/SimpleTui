@@ -19,8 +19,27 @@ constexpr bool operator==(const Color& a, const Color& b) {
 
 constexpr bool operator!=(const Color& a, const Color& b) { return !(a == b); }
 
+inline constexpr Color color_black{0, 0, 0};
 inline constexpr Color color_white{255, 255, 255};
-inline constexpr Color color_green{0, 255, 0};
+inline constexpr Color color_green{149, 255, 143};
+inline constexpr Color color_red{0xFF, 0x60, 0x8F};
+inline constexpr Color color_yellow{255, 255, 0};
+inline constexpr Color color_blue{0x1A, 0x53, 0x99};
+
+struct Colors {
+    Color fg = color_white;
+    Color bg = color_black;
+};
+
+constexpr bool operator==(const Colors& a, const Colors& b) {
+    return a.bg == b.bg && a.fg == b.fg;
+}
+
+constexpr bool operator!=(const Colors& a, const Colors& b) { return !(a == b); }
+
+struct TextConfig {
+    Colors colors;
+};
 
 class Display {
 public:
@@ -28,6 +47,7 @@ public:
     virtual void clear() const = 0;
     // Monochrome backends can ignore this; the default keeps them compatible.
     virtual void setColor(Color) const {}
+    virtual void setColors(const Colors& colors) const { setColor(colors.fg); }
     virtual void print(uint16_t x, uint16_t y, const char* str) const = 0;
 };
 
@@ -128,8 +148,8 @@ protected:
 
 class Text : public Widget {
 public:
-    explicit Text(const char* str, Color color = color_white)
-        : str_(str), color_(color) {}
+    explicit Text(const char* str, TextConfig config = {})
+        : str_(str), config_(config) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
         (void) avail_w;
@@ -151,7 +171,7 @@ public:
         for (uint16_t i = 0; i < painted_; ++i)
             d.print(static_cast<uint16_t>(x_ + i), y_, sp);
 
-        d.setColor(color_);
+        d.setColors(config_.colors);
         uint16_t full = static_cast<uint16_t>(strlen(str_));
         uint16_t drawn = 0;
         if (full > w_ && static_cast<uint32_t>(scroll_) + w_ > full) {
@@ -181,7 +201,7 @@ public:
             drawn = static_cast<uint16_t>(show + (elide ? 1 : 0));
         }
         painted_ = drawn;
-        d.setColor(color_white);
+        d.setColors(Colors{});
     }
 
     void setScroll(uint16_t offset) const { scroll_ = offset; }
@@ -202,7 +222,7 @@ public:
 private:
     static constexpr uint16_t scroll_gap = 3; // spaces between end and start
     const char* str_;
-    Color color_;
+    TextConfig config_;
     mutable uint16_t scroll_ = 0;
     mutable uint16_t painted_ = 0;
 };
@@ -304,11 +324,18 @@ public:
     Panel(const Children&... children) : children_(children...) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
+        // Fill the assigned width (panels in a row share their column), but
+        // wrap the height to the stacked content plus the two border rows.
         mw_ = avail_w;
-        mh_ = avail_h;
         uint16_t iw = (avail_w > 2) ? static_cast<uint16_t>(avail_w - 2) : 0;
         uint16_t ih = (avail_h > 2) ? static_cast<uint16_t>(avail_h - 2) : 0;
-        std::apply([&](const auto&... c) { (c.measure(iw, ih), ...); }, children_);
+        uint16_t content_h = 0;
+        std::apply([&](const auto&... c) {
+            ((c.measure(iw, ih),
+              content_h = static_cast<uint16_t>(content_h + c.measured_height())), ...);
+        }, children_);
+        uint32_t full_h = static_cast<uint32_t>(content_h) + 2;
+        mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {

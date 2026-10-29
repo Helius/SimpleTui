@@ -76,6 +76,18 @@ TEST_CASE("StdoutDisplay::setColor emits a 24-bit foreground color") {
     CHECK(out.str() == "\x1b[38;2;1;2;3m");
 }
 
+TEST_CASE("StdoutDisplay::setColors emits 24-bit foreground and background") {
+    StdoutDisplay display;
+    std::ostringstream out;
+    std::streambuf* old = std::cout.rdbuf(out.rdbuf());
+
+    display.setColors(stui::Colors{.fg = stui::Color{1, 2, 3},
+                                   .bg = stui::Color{4, 5, 6}});
+
+    std::cout.rdbuf(old);
+    CHECK(out.str() == "\x1b[38;2;1;2;3m\x1b[48;2;4;5;6m");
+}
+
 TEST_CASE("StdoutDisplay::print moves the cursor to x,y and prints only that string") {
     StdoutDisplay display;
     std::ostringstream out;
@@ -117,25 +129,26 @@ TEST_CASE("Text render prints its string at the assigned box") {
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Text renders with its color and restores white afterwards") {
+TEST_CASE("Text renders with its TextConfig colors and restores defaults") {
     class ColorDisplay : public stui::Display {
     public:
         void clear() const override {}
-        void setColor(stui::Color c) const override { current = c; }
+        void setColors(const stui::Colors& c) const override { current = c; }
         void print(uint16_t, uint16_t, const char*) const override { printed = current; }
 
-        mutable stui::Color current = stui::color_white;
-        mutable stui::Color printed{0, 0, 0};
+        mutable stui::Colors current{};
+        mutable stui::Colors printed{};
     };
 
-    stui::Text green{"hi", stui::color_green};
+    stui::Text green{"hi", {.colors = {.fg = stui::color_green}}};
     green.measure(5, 1);
     green.layout(0, 0, 5, 1);
 
     ColorDisplay display;
     green.render(display);
-    CHECK(display.printed == stui::color_green);
-    CHECK(display.current == stui::color_white); // reset for the next widget
+    CHECK(display.printed.fg == stui::color_green);
+    CHECK(display.printed.bg == stui::color_black);
+    CHECK(display.current == stui::Colors{}); // reset for the next widget
 
     stui::Text def{"hi"};
     def.measure(5, 1);
@@ -143,7 +156,8 @@ TEST_CASE("Text renders with its color and restores white afterwards") {
 
     ColorDisplay display2;
     def.render(display2);
-    CHECK(display2.printed == stui::color_white);
+    CHECK(display2.printed.fg == stui::color_white);
+    CHECK(display2.printed.bg == stui::color_black);
 }
 
 TEST_CASE("Text elides with an ellipsis when wider than its box") {
@@ -201,6 +215,36 @@ TEST_CASE("Column stacks children vertically") {
     CHECK(display.lines() == expected);
 }
 
+TEST_CASE("Column stacks wrap-content panels at their own heights") {
+    stui::Column<stui::Panel<stui::Text, stui::Text, stui::Text>,
+                 stui::Panel<stui::Text>>
+        col{
+            stui::Panel<stui::Text, stui::Text, stui::Text>{
+                stui::Text{"a"}, stui::Text{"b"}, stui::Text{"c"}},
+            stui::Panel<stui::Text>{stui::Text{"d"}}};
+
+    col.measure(16, 12);
+    // (3 content rows + 2 border) + (1 content row + 2 border)
+    CHECK(col.measured_height() == 8);
+
+    col.layout(0, 0, 16, 12);
+
+    TestDisplay display;
+    col.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌──────────────┐",
+        "│a             │",
+        "│b             │",
+        "│c             │",
+        "└──────────────┘",
+        "┌──────────────┐",
+        "│d             │",
+        "└──────────────┘",
+    };
+    CHECK(display.lines() == expected);
+}
+
 TEST_CASE("Column keeps content children visible when fill children would starve them") {
     stui::Column<stui::Text, stui::Panel<stui::Text>, stui::Panel<stui::Text>> col{
         stui::Text{"hi"},
@@ -213,36 +257,33 @@ TEST_CASE("Column keeps content children visible when fill children would starve
     TestDisplay display;
     col.render(display);
 
-    // Text needs 1 row; the two panels share the remaining 8 rows (4 each).
+    // Text 1 row, then each panel wraps to 1 content row + 2 border rows.
     const std::vector<std::string> expected = {
         "hi",
         "┌──────────────┐",
         "│a             │",
-        "│              │",
         "└──────────────┘",
         "┌──────────────┐",
         "│b             │",
-        "│              │",
         "└──────────────┘",
     };
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Column shrinks fill children so it never exceeds its assigned height") {
+TEST_CASE("Column measures wrap-content panels by their content height") {
     stui::Column<stui::Panel<stui::Text>, stui::Panel<stui::Text>> col{
         stui::Panel<stui::Text>{stui::Text{"a"}},
         stui::Panel<stui::Text>{stui::Text{"b"}}};
 
     col.measure(5, 6);
-    CHECK(col.measured_width() == 5);
-    CHECK(col.measured_height() == 6); // clamped to the available height
+    CHECK(col.measured_width() == 5);  // panels fill the assigned width
+    CHECK(col.measured_height() == 6); // (1 + 2) * 2
 
     col.layout(0, 0, 5, 6);
 
     TestDisplay display;
     col.render(display);
 
-    // 6 tall -> 3 per panel, stacked.
     const std::vector<std::string> expected = {
         "┌───┐",
         "│a  │",
@@ -340,11 +381,16 @@ TEST_CASE("Row shrinks fill children so it never exceeds its assigned width") {
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Panel fills the available parent size") {
+TEST_CASE("Panel wraps its content height and fills the available width") {
     stui::Panel<stui::Text> panel{stui::Text{"hi"}};
     panel.measure(5, 3);
-    CHECK(panel.measured_width() == 5);
-    CHECK(panel.measured_height() == 3);
+    CHECK(panel.measured_width() == 5);  // fills the assigned width
+    CHECK(panel.measured_height() == 3); // 1 content row + two borders
+
+    stui::Panel<stui::Text> narrow{stui::Text{"hello"}};
+    narrow.measure(4, 2);
+    CHECK(narrow.measured_width() == 4);
+    CHECK(narrow.measured_height() == 2); // clamped
 }
 
 TEST_CASE("Panel draws a border and renders its children inside") {

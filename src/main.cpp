@@ -23,23 +23,25 @@ int main() {
     char distance[12] = "0";
 
     const auto root = Panel{
-      Text{"Main motors are disabled by safety switch"},
+      Text{"Main motors are disabled by safety switch",
+        {.colors = {.fg = color_green}}
+      },
       Row{
         Column{
           Panel{
-            Text{"battery: 3.9V"},
-            Text{"WIFI: -66 dBm"}
+              Text{"battery: 3.9V"},
+              Text{"WIFI: -66 dBm"},
+              Text{"current: 0.1mA"}
           },
           Panel{
-            Text{"x: 0"},
-            Text{"y: 0"},
+            Text{"x,y: 0,0"}
           },
         },
         Panel{
           Row{
-            Text{"dist: "},
-            Text{distance, color_green},
-            Text{" m"},
+            Text{"dist: ", {.colors = {.bg = color_blue}}},
+            Text{distance, {.colors = {.fg = color_red, .bg = color_blue}}},
+            Text{" m", {.colors = {.bg = color_blue}}},
           },
           Text{"tempr: 10"},
           Text{"press: 1013 hPa"},

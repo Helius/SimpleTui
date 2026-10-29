@@ -18,17 +18,25 @@ static uint32_t now_ms() {
 int main() {
     StdoutDisplay display;
     SimpleTui<34, 11> tui(display);
+    int counter = 0;
+    char number[5];
 
-    using Panel2 = Panel<Text, Text>;
-
-    const auto root = Column {
-      Panel {
-        Text{"hello"},
-        Text{"world"}
-      },
-      Panel {
-        Text{"ttt"},
-        Text{"xxx"}
+    const auto root = Panel{
+      Row{
+        Column{
+          Panel{
+            Text{"hello"},
+            Text{"world"}
+          },
+          Panel{
+            Text{"ttt"},
+            Text{"xxx"}
+          },
+          Text{"very long string that doesn't fit"},
+        },
+        Panel{
+          Text{number}
+        }
       }
     };
 
@@ -37,8 +45,10 @@ int main() {
     std::atomic<bool> running{true};
     std::thread worker([&] {
         while (running.load()) {
+            snprintf(number, sizeof(number), "%d", counter);
             tui.loop(now_ms());
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            counter++;
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
     });
 

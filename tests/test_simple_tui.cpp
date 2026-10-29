@@ -180,11 +180,11 @@ TEST_CASE("Column shrinks fill children so it never exceeds its assigned height"
 TEST_CASE("Row measure is sum width plus spacing by max height") {
     stui::Row<stui::Text, stui::Text> row{stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
-    CHECK(row.measured_width() == 5); // 2 + 1 (default spacing) + 2
+    CHECK(row.measured_width() == 4); // 2 + 0 (default spacing) + 2
     CHECK(row.measured_height() == 1);
 }
 
-TEST_CASE("Row places children horizontally with one space by default") {
+TEST_CASE("Row places children horizontally with no space by default") {
     stui::Row<stui::Text, stui::Text> row{stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
     row.layout(0, 0, 80, 1);
@@ -192,7 +192,7 @@ TEST_CASE("Row places children horizontally with one space by default") {
     TestDisplay display;
     row.render(display);
 
-    const std::vector<std::string> expected = {"ab cd"};
+    const std::vector<std::string> expected = {"abcd"};
     CHECK(display.lines() == expected);
 }
 

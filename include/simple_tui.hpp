@@ -199,7 +199,7 @@ private:
 template <typename... Children>
 class Row : public Widget {
 public:
-    explicit Row(const Children&... children) : Row(1, children...) {}
+    explicit Row(const Children&... children) : Row(0, children...) {}
 
     Row(uint16_t spacing, const Children&... children)
         : spacing_(spacing), children_(children...) {}
@@ -245,7 +245,7 @@ public:
     }
 
 private:
-    uint16_t spacing_ = 1;
+    uint16_t spacing_ = 0;
     std::tuple<const Children...> children_;
 };
 

@@ -50,7 +50,7 @@ simple-tui/
     (`max width × sum height`), `Row` places horizontally at a fixed `spacing`
     (total width = sum of child widths + spacing between neighbours, height =
     max child height). `Row` takes the spacing as an optional first argument
-    (`Row{2, Text{"a"}, Text{"b"}}`, default `1`). Both containers clamp their
+    (`Row{2, Text{"a"}, Text{"b"}}`, default `0`). Both containers clamp their
     measured extent to the available space and shrink oversized children
     proportionally, so fill widgets like `Panel` stay on screen.
   - `Panel` — a bordered container that **fills its parent** and stacks its
@@ -122,6 +122,7 @@ each row individually when it fails.
 ```bash
 # configure (tests enabled by default)
 cmake -S . -B build
+# also writes build/compile_commands.json for clangd
 
 # build everything
 cmake --build build
@@ -137,6 +138,12 @@ To skip tests (e.g. a lean build):
 
 ```bash
 cmake -S . -B build -DBUILD_TESTING=OFF
+```
+
+To skip `compile_commands.json` generation:
+
+```bash
+cmake -S . -B build -DSIMPLE_TUI_EXPORT_COMPILE_COMMANDS=OFF
 ```
 
 ## Using on Arduino

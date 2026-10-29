@@ -17,8 +17,16 @@
 class StdoutDisplay : public stui::Display {
 public:
     void clear() const override {
-        // Erase the whole screen, then move the cursor home.
-        std::cout << "\x1b[2J\x1b[H" << std::flush;
+        // Reset colors, erase the whole screen, then move the cursor home.
+        std::cout << "\x1b[0m\x1b[2J\x1b[H" << std::flush;
+    }
+
+    void setColor(stui::Color color) const override {
+        std::cout << "\x1b[38;2;"
+                  << static_cast<unsigned>(color.r) << ';'
+                  << static_cast<unsigned>(color.g) << ';'
+                  << static_cast<unsigned>(color.b) << 'm'
+                  << std::flush;
     }
 
     void print(uint16_t x, uint16_t y, const char* str) const override {

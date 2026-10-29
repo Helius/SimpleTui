@@ -7,10 +7,27 @@
 
 namespace stui {
 
+struct Color {
+    uint8_t r = 255;
+    uint8_t g = 255;
+    uint8_t b = 255;
+};
+
+constexpr bool operator==(const Color& a, const Color& b) {
+    return a.r == b.r && a.g == b.g && a.b == b.b;
+}
+
+constexpr bool operator!=(const Color& a, const Color& b) { return !(a == b); }
+
+inline constexpr Color color_white{255, 255, 255};
+inline constexpr Color color_green{0, 255, 0};
+
 class Display {
 public:
     virtual ~Display() = default;
     virtual void clear() const = 0;
+    // Monochrome backends can ignore this; the default keeps them compatible.
+    virtual void setColor(Color) const {}
     virtual void print(uint16_t x, uint16_t y, const char* str) const = 0;
 };
 
@@ -111,7 +128,8 @@ protected:
 
 class Text : public Widget {
 public:
-    explicit Text(const char* str) : str_(str) {}
+    explicit Text(const char* str, Color color = color_white)
+        : str_(str), color_(color) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
         (void) avail_w;
@@ -133,6 +151,7 @@ public:
         for (uint16_t i = 0; i < painted_; ++i)
             d.print(static_cast<uint16_t>(x_ + i), y_, sp);
 
+        d.setColor(color_);
         uint16_t full = static_cast<uint16_t>(strlen(str_));
         uint16_t drawn = 0;
         if (full > w_ && static_cast<uint32_t>(scroll_) + w_ > full) {
@@ -162,6 +181,7 @@ public:
             drawn = static_cast<uint16_t>(show + (elide ? 1 : 0));
         }
         painted_ = drawn;
+        d.setColor(color_white);
     }
 
     void setScroll(uint16_t offset) const { scroll_ = offset; }
@@ -182,6 +202,7 @@ public:
 private:
     static constexpr uint16_t scroll_gap = 3; // spaces between end and start
     const char* str_;
+    Color color_;
     mutable uint16_t scroll_ = 0;
     mutable uint16_t painted_ = 0;
 };
@@ -260,6 +281,11 @@ public:
     }
 
     void render(const Display& d) const override {
+        // Text may point at a live buffer whose length changed since layout.
+        // Re-measure and re-layout so each child starts where the previous one
+        // currently ends (e.g. "dist: " + "10" + " m").
+        measure(w_, h_);
+        layout(x_, y_, w_, h_);
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
 

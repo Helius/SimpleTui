@@ -27,21 +27,26 @@ simple-tui/
 ### Components
 
 - **`include/simple_tui.hpp`** — the library (namespace `stui`).
-  - `Display` — pure interface (`void clear()` plus
+  - `Display` — pure interface (`void clear()`, `void setColor(Color)` and
     `void print(uint16_t x, uint16_t y, const char* str)`) used as an output
     backend (LCD, OLED, Serial, terminal, ...). `clear()` wipes the whole
-    screen; `SimpleTui` calls it from its constructor. `print` draws one cell
+    screen; `SimpleTui` calls it from its constructor. `setColor` defaults to
+    a no-op so monochrome backends stay compatible. `print` draws one cell
     at a time; multi-byte UTF-8 strings (box-drawing characters) are passed
     through whole.
   - **Glyph constants** — `glyph_top_left`, `glyph_horizontal`,
     `glyph_bottom_right`, `glyph_ellipsis`, etc. hold the UTF-8 box-drawing
     characters as escaped bytes (pure-ASCII source) with a comment naming each
     character and codepoint. Widgets use them instead of inline escapes.
+  - **Colors** — `Color{r, g, b}` (24-bit RGB) with `color_white` and
+    `color_green` constants. `Text` takes a color as its second argument,
+    defaulting to white.
   - `Widget` — abstract base for the declarative tree. Every widget implements
     `measure(avail_w, avail_h)`, `layout(x, y, w, h)` and `render(Display&)`;
     all three are `const` and use `mutable` state, so a `const Widget&` can
     still be measured, laid out and animated (properties stay live).
-  - `Text` — a leaf that measures to `strlen × 1`, renders char-by-char, elides
+  - `Text` — a leaf that measures to `strlen × 1`, renders char-by-char in its
+    `Color` (second constructor argument, defaults to `color_white`), elides
     with `…` when wider than its box, and supports `setScroll(offset)`.
     Scrolling loops: once the tail reaches the window's end, the text continues
     with a three-space gap followed by the beginning of the string.

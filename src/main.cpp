@@ -20,7 +20,7 @@ int main() {
     StdoutDisplay display;
     SimpleTui<34, 11> tui(display);
     int counter = 0;
-    char distance[12];
+    char distance[12] = "0";
 
     const auto root = Panel{
       Text{"Main motors are disabled by safety switch"},
@@ -33,11 +33,14 @@ int main() {
           Panel{
             Text{"x: 0"},
             Text{"y: 0"},
-            // Text{"z: 0"}
           },
         },
         Panel{
-          Text{distance},
+          Row{
+            Text{"dist: "},
+            Text{distance, color_green},
+            Text{" m"},
+          },
           Text{"tempr: 10"},
           Text{"press: 1013 hPa"},
           Text{"humidity: 50%"},
@@ -52,10 +55,10 @@ int main() {
     std::atomic<bool> running{true};
     std::thread worker([&] {
         while (running.load()) {
-            snprintf(distance, sizeof(distance), "dist: %d mm", counter);
-            // tui.loop(now_ms());
+            snprintf(distance, sizeof(distance), "%d", counter);
+            tui.loop(now_ms());
             counter++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(177));
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
         }
     });
 

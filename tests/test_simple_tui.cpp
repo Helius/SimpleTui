@@ -62,7 +62,18 @@ TEST_CASE("StdoutDisplay::clear wipes the terminal and homes the cursor") {
     display.clear();
 
     std::cout.rdbuf(old);
-    CHECK(out.str() == "\x1b[2J\x1b[H");
+    CHECK(out.str() == "\x1b[0m\x1b[2J\x1b[H");
+}
+
+TEST_CASE("StdoutDisplay::setColor emits a 24-bit foreground color") {
+    StdoutDisplay display;
+    std::ostringstream out;
+    std::streambuf* old = std::cout.rdbuf(out.rdbuf());
+
+    display.setColor(stui::Color{1, 2, 3});
+
+    std::cout.rdbuf(old);
+    CHECK(out.str() == "\x1b[38;2;1;2;3m");
 }
 
 TEST_CASE("StdoutDisplay::print moves the cursor to x,y and prints only that string") {
@@ -104,6 +115,35 @@ TEST_CASE("Text render prints its string at the assigned box") {
 
     const std::vector<std::string> expected = {"hello"};
     CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Text renders with its color and restores white afterwards") {
+    class ColorDisplay : public stui::Display {
+    public:
+        void clear() const override {}
+        void setColor(stui::Color c) const override { current = c; }
+        void print(uint16_t, uint16_t, const char*) const override { printed = current; }
+
+        mutable stui::Color current = stui::color_white;
+        mutable stui::Color printed{0, 0, 0};
+    };
+
+    stui::Text green{"hi", stui::color_green};
+    green.measure(5, 1);
+    green.layout(0, 0, 5, 1);
+
+    ColorDisplay display;
+    green.render(display);
+    CHECK(display.printed == stui::color_green);
+    CHECK(display.current == stui::color_white); // reset for the next widget
+
+    stui::Text def{"hi"};
+    def.measure(5, 1);
+    def.layout(0, 0, 5, 1);
+
+    ColorDisplay display2;
+    def.render(display2);
+    CHECK(display2.printed == stui::color_white);
 }
 
 TEST_CASE("Text elides with an ellipsis when wider than its box") {
@@ -244,6 +284,37 @@ TEST_CASE("Row custom spacing separates children") {
 
     const std::vector<std::string> expected = {"ab  cd"};
     CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Row places Texts back-to-back") {
+    stui::Row<stui::Text, stui::Text, stui::Text> row{
+        stui::Text{"dist: "}, stui::Text{"10"}, stui::Text{" m"}};
+
+    row.measure(14, 1);
+    row.layout(0, 0, 14, 1);
+
+    TestDisplay display;
+    row.render(display);
+
+    CHECK(display.lines() == std::vector<std::string>{"dist: 10 m"});
+}
+
+TEST_CASE("Row repositions children when a Text buffer grows") {
+    char value[4] = "0";
+    stui::Row<stui::Text, stui::Text, stui::Text> row{
+        stui::Text{"dist: "}, stui::Text{value}, stui::Text{" m"}};
+
+    row.measure(14, 1);
+    row.layout(0, 0, 14, 1);
+
+    value[0] = '1';
+    value[1] = '0';
+    value[2] = '\0';
+
+    TestDisplay display;
+    row.render(display);
+
+    CHECK(display.lines() == std::vector<std::string>{"dist: 10 m"});
 }
 
 TEST_CASE("Row shrinks fill children so it never exceeds its assigned width") {

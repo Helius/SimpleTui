@@ -15,45 +15,79 @@ static uint32_t now_ms() {
             now.time_since_epoch()).count());
 }
 
+struct ViewModel {
+  ViewModel() {
+    counter[0] = '\0';
+    liveStr0[0] = '\0';
+    liveStr1[0] = '\0';
+  }
+  char counter[10];
+  const char * hellow = "hello";
+  const char * world = "world";
+  char liveStr0[6];
+  char liveStr1[6];
+  const char * longStr = "very long string that doesn't fit";
+};
+
+const auto compose(const ViewModel& vm) {
+    return Panel{
+        Row{
+            Column{
+                Panel{
+                    Text{vm.hellow},
+                    Text{vm.world}
+                },
+                Panel{
+                    Text{vm.liveStr0},
+                    Text{vm.liveStr1}
+                },
+                Text{vm.longStr},
+            },
+            Panel{
+                Text{vm.counter}
+            }
+        }
+    };
+}
+
 int main() {
     StdoutDisplay display;
     SimpleTui<34, 11> tui(display);
     int counter = 0;
-    char number[5];
+    char distance[12];
 
     const auto root = Panel{
+      Text{"Main motors are disabled by safety switch"},
       Row{
         Column{
           Panel{
-            Text{"hello"},
-            Text{"world"}
+            Text{"battery: 3.9V"},
+            Text{"WIFI: -66 dBm"}
           },
           Panel{
-            Text{"ttt"},
-            Text{"xxx"}
+            Text{"x: 0"},
+            Text{"y: 0"}
           },
-          Text{"very long string that doesn't fit"},
         },
         Panel{
-          Text{number}
+          Text{distance}
         }
       }
     };
 
+    ViewModel vm;
     tui.setScreen(root);
 
     std::atomic<bool> running{true};
     std::thread worker([&] {
         while (running.load()) {
-            snprintf(number, sizeof(number), "%d", counter);
+            snprintf(distance, sizeof(distance), "dist: %d mm", counter);
             tui.loop(now_ms());
             counter++;
-            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+            std::this_thread::sleep_for(std::chrono::milliseconds(177));
         }
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(2600));
     worker.join();
-
     return 0;
 }

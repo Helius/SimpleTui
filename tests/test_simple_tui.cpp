@@ -6,6 +6,7 @@
 
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "terminal_display.hpp"
@@ -39,6 +40,15 @@ public:
     mutable std::vector<std::vector<std::string>> buffer;
     mutable int clear_count = 0;
 };
+
+// Detects whether `tui.setScreen(arg)` is well-formed, without instantiating
+// the function body (so it reflects the overload/SFINAE constraints).
+template <typename Tui, typename Arg, typename = void>
+struct can_set_screen : std::false_type {};
+
+template <typename Tui, typename Arg>
+struct can_set_screen<Tui, Arg, std::void_t<decltype(
+    std::declval<Tui&>().setScreen(std::declval<Arg>()))>> : std::true_type {};
 
 // ---------------------------------------------------------------------------
 // StdoutDisplay — ANSI output backend
@@ -148,6 +158,33 @@ TEST_CASE("Column stacks children vertically") {
     col.render(display);
 
     const std::vector<std::string> expected = {"hello", "world"};
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Column keeps content children visible when fill children would starve them") {
+    stui::Column<stui::Text, stui::Panel<stui::Text>, stui::Panel<stui::Text>> col{
+        stui::Text{"hi"},
+        stui::Panel<stui::Text>{stui::Text{"a"}},
+        stui::Panel<stui::Text>{stui::Text{"b"}}};
+
+    col.measure(16, 9);
+    col.layout(0, 0, 16, 9);
+
+    TestDisplay display;
+    col.render(display);
+
+    // Text needs 1 row; the two panels share the remaining 8 rows (4 each).
+    const std::vector<std::string> expected = {
+        "hi",
+        "┌──────────────┐",
+        "│a             │",
+        "│              │",
+        "└──────────────┘",
+        "┌──────────────┐",
+        "│b             │",
+        "│              │",
+        "└──────────────┘",
+    };
     CHECK(display.lines() == expected);
 }
 
@@ -352,6 +389,14 @@ TEST_CASE("SimpleTui::setScreen lays out and renders a screen") {
 
     const std::vector<std::string> expected = {"hi", "yo"};
     CHECK(display.lines() == expected);
+}
+
+TEST_CASE("SimpleTui::setScreen accepts lvalues and rejects rvalues") {
+    using Tui = stui::SimpleTui<5, 2>;
+
+    CHECK(can_set_screen<Tui, stui::Text&>::value);
+    CHECK(can_set_screen<Tui, const stui::Text&>::value);
+    CHECK_FALSE(can_set_screen<Tui, stui::Text>::value);
 }
 
 TEST_CASE("SimpleTui constructor clears the display") {

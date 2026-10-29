@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <tuple>
+#include <type_traits>
 
 namespace stui {
 
@@ -177,11 +178,27 @@ public:
             ((total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
         }, children_);
 
+        // Allocate sequentially from what is left, so a small content child
+        // (e.g. a one-line Text) is never rounded down to zero height and
+        // overlapped by a following fill child (e.g. a Panel).
         uint16_t cy = y;
-        std::apply([&](const auto&... c) {
-            ((c.layout(x, cy, w, fit_dimension(c.measured_height(), total_h, h)),
-              cy = static_cast<uint16_t>(cy + fit_dimension(c.measured_height(), total_h, h))), ...);
-        }, children_);
+        uint16_t remaining = h;
+        uint16_t remaining_desired = total_h;
+        auto place = [&](const auto& c) {
+            uint16_t desired = c.measured_height();
+            uint16_t share = fit_dimension(desired, remaining_desired, remaining);
+            if (desired > 0 && share == 0 && remaining > 0)
+                share = 1;
+            if (share > remaining)
+                share = remaining;
+            c.layout(x, cy, w, share);
+            cy = static_cast<uint16_t>(cy + share);
+            remaining = static_cast<uint16_t>(remaining - share);
+            remaining_desired = (remaining_desired > desired)
+                                    ? static_cast<uint16_t>(remaining_desired - desired)
+                                    : 0;
+        };
+        std::apply([&](const auto&... c) { (place(c), ...); }, children_);
     }
 
     void render(const Display& d) const override {
@@ -322,9 +339,16 @@ public:
         display_.clear();
     }
 
-    void setScreen(const Widget& screen) {
+    template <typename T>
+typename std::enable_if<
+        std::is_base_of<Widget, typename std::decay<T>::type>::value &&
+        std::is_lvalue_reference<T>::value, void>::type
+    setScreen(T&& screen) {
+        // Only lvalues are accepted: SimpleTui stores a pointer to the screen,
+        // so a temporary would dangle once setScreen returns.
         current_ = &screen;
         started_ = false;
+        display_.clear();
         screen.measure(Width, Height);
         screen.layout(0, 0, Width, Height);
         screen.render(display_);

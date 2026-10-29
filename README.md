@@ -52,14 +52,17 @@ simple-tui/
     max child height). `Row` takes the spacing as an optional first argument
     (`Row{2, Text{"a"}, Text{"b"}}`, default `0`). Both containers clamp their
     measured extent to the available space and shrink oversized children
-    proportionally, so fill widgets like `Panel` stay on screen.
+    proportionally, so fill widgets like `Panel` stay on screen. `Column`
+    allocates rows sequentially and gives every non-empty child at least one
+    row, so a one-line `Text` before fill panels is not rounded away.
   - `Panel` — a bordered container that **fills its parent** and stacks its
     children vertically inside the border. Use it as an outer frame around
     other widgets.
   - `Screen` — wraps a `const Widget&` root and forwards the three passes. No
     template arguments needed, since screens are always handled polymorphically.
-  - `SimpleTui<Width, Height>` — render-only entry point. `setScreen(const Widget&)`
-    measures and lays the screen into the terminal, stores it, and renders it.
+  - `SimpleTui<Width, Height>` — render-only entry point. `setScreen(Widget&)`
+    (lvalues only) measures and lays the screen into the terminal, stores a
+    pointer to it, and renders it.
     `loop(now_ms)` is the per-iteration hook: it redraws the current screen only
     once at least `redraw_interval_ms` (500 ms) have elapsed, calling each
     widget's `tick()` first so animations advance. `drawRect(...)` draws a box.
@@ -77,12 +80,15 @@ simple-tui/
 ```cpp
 SimpleTui<10, 5> tui(display);
 
-tui.setScreen(Panel{Text{"hello"}, Text{"world"}});
+auto root = Panel{Text{"hello"}, Text{"world"}};
+tui.setScreen(root);
 ```
 
-`setScreen` takes a `const Widget&`, so a temporary tree is fine — it is measured,
-laid out and rendered during the call. For a screen you keep around, store the
-root (e.g. a `static`) and wrap it in a `Screen`, or pass it directly.
+`setScreen` accepts **lvalues only**. The screen is stored by pointer, so a
+temporary (`tui.setScreen(Panel{...})`) would dangle once the call returns;
+passing one is rejected at compile time. Keep the root alive for as long as the
+`SimpleTui` may redraw it (a local that outlives the render loop, a `static`,
+or a global).
 
 Rendering is a two-pass pipeline: `measure` computes desired sizes bottom-up,
 `layout` assigns boxes top-down, then `render` draws. A separate `Navigator`
@@ -105,9 +111,10 @@ std::thread worker([&] {
 });
 ```
 
-The screen passed to `setScreen` is stored, so it must outlive the `SimpleTui`
-(e.g. a `static`/global root) — don't pass a temporary when a background thread
-will redraw it later.
+The screen passed to `setScreen` is stored by pointer, so it must outlive the
+`SimpleTui` redraw loop (e.g. a local in the same scope, a `static`/global root).
+Temporaries are rejected at compile time; a local that goes out of scope early
+is still your responsibility.
 
 ## Testing
 

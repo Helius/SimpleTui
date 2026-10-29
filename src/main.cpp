@@ -15,40 +15,6 @@ static uint32_t now_ms() {
             now.time_since_epoch()).count());
 }
 
-struct ViewModel {
-  ViewModel() {
-    counter[0] = '\0';
-    liveStr0[0] = '\0';
-    liveStr1[0] = '\0';
-  }
-  char counter[10];
-  const char * hellow = "hello";
-  const char * world = "world";
-  char liveStr0[6];
-  char liveStr1[6];
-  const char * longStr = "very long string that doesn't fit";
-};
-
-const auto compose(const ViewModel& vm) {
-    return Panel{
-        Row{
-            Column{
-                Panel{
-                    Text{vm.hellow},
-                    Text{vm.world}
-                },
-                Panel{
-                    Text{vm.liveStr0},
-                    Text{vm.liveStr1}
-                },
-                Text{vm.longStr},
-            },
-            Panel{
-                Text{vm.counter}
-            }
-        }
-    };
-}
 
 int main() {
     StdoutDisplay display;
@@ -75,7 +41,6 @@ int main() {
       }
     };
 
-    ViewModel vm;
     tui.setScreen(root);
 
     std::atomic<bool> running{true};

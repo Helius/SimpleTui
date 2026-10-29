@@ -42,36 +42,46 @@ simple-tui/
     character and codepoint. Widgets use them instead of inline escapes.
   - **Colors** — `Color{r, g, b}` (24-bit RGB, with `color_black`,
     `color_white`, `color_green` constants), `Colors{bg, fg}`, and
-    `TextConfig{colors}`. `Text` takes a `TextConfig` as its second argument,
-    defaulting to white on black:
+    `TextConfig{colors, border = false}`. `Text` takes a `TextConfig` as its
+    second argument, defaulting to white on black and no border:
     ```cpp
     Text{"dist", {.colors = {.fg = color_green}}}
+    Text{"boxed", {.border = true}}
     ```
     `TextConfig` is the place to add further per-text settings later.
   - `Widget` — abstract base for the declarative tree. Every widget implements
     `measure(avail_w, avail_h)`, `layout(x, y, w, h)` and `render(Display&)`;
     all three are `const` and use `mutable` state, so a `const Widget&` can
     still be measured, laid out and animated (properties stay live).
-  - `Text` — a leaf that measures to `strlen × 1`, renders char-by-char with its
-    `TextConfig` colors (default white on black), elides with `…` when wider
-    than its box, and supports `setScroll(offset)`.
+  - `Text` — a leaf that measures to `strlen × 1` (or `(strlen + 2) × 3` with
+    `border`), renders char-by-char with its `TextConfig` colors (default white
+    on black), elides with `…` when wider than its box, and supports
+    `setScroll(offset)`. With `border`, the rectangle is drawn and the text
+    window shrinks to the interior.
     Scrolling loops: once the tail reaches the window's end, the text continues
     with a three-space gap followed by the beginning of the string.
   - `Column` / `Row` — containers storing children **by value** in
     `std::tuple<const Children...>` (no heap). `Column` stacks vertically
-    (`max width × sum height`), `Row` places horizontally at a fixed `spacing`
-    (total width = sum of child widths + spacing between neighbours, height =
-    max child height). `Row` takes the spacing as an optional first argument
-    (`Row{2, Text{"a"}, Text{"b"}}`, default `0`). Both containers clamp their
-    measured extent to the available space and shrink oversized children
-    proportionally, so fill widgets like `Panel` stay on screen. `Column`
-    allocates rows sequentially and gives every non-empty child at least one
-    row, so a one-line `Text` before fill panels is not rounded away.
-  - `Panel` — a bordered container that fills the width assigned by its parent
-    and **wraps its height** to the stacked content plus the two border rows
-    (clamped to the available height). Children are allocated within the
-    interior, above the bottom border. Use it as an outer frame around other
-    widgets.
+    (`max width × sum height + spacing`), `Row` places horizontally
+    (total width = sum of child widths + `spacing` between neighbours, height =
+    max child height). Both clamp their measured extent to the available space
+    and shrink oversized children proportionally. `Column` allocates rows
+    sequentially and gives every non-empty child at least one row, so small
+    content is not rounded away.
+  - **`LayoutConfig`** — `LayoutConfig{border = false, spacing = 0}` is
+    accepted as an optional first argument by `Row` and `Column`. `border`
+    draws a rectangle with the children laid out inside it (the measured extent
+    grows by the border); `spacing` is the gap between neighbours (horizontal
+    for `Row`, vertical for `Column`). Because the argument type is fixed, CTAD
+    still deduces the child types, so no template arguments are needed:
+    ```cpp
+    Row{{.border = true}, Text{"a"}, Text{"b"}}
+    Column{{.spacing = 1}, Text{"a"}, Text{"b"}}
+    Row{{.border = true, .spacing = 2}, Text{"a"}, Text{"b"}}
+    ```
+    Designated initializers must follow declaration order (`border` then
+    `spacing`) when setting both. `Text{}` default-constructs an empty string,
+    so placeholder children work in this form.
   - `Screen` — wraps a `const Widget&` root and forwards the three passes. No
     template arguments needed, since screens are always handled polymorphically.
   - `SimpleTui<Width, Height>` — render-only entry point. `setScreen(Widget&)`
@@ -81,7 +91,7 @@ simple-tui/
     once at least `redraw_interval_ms` (500 ms) have elapsed, calling each
     widget's `tick()` first so animations advance. `drawRect(...)` draws a box.
 - **`src/main.cpp`** — a small runnable binary with a `StdoutDisplay`, building
-  a `Screen { Panel { Text, Text } }` tree.
+  a nested `Column` / `Row` tree with borders.
 - **`src/terminal_display.hpp`** — desktop-only `Display` for the demo.
   `clear()` emits `ESC[2J ESC[H` (erase screen, home cursor); each
   `print(x, y, str)` emits an ANSI cursor-position sequence (`ESC[row;colH`,
@@ -94,12 +104,12 @@ simple-tui/
 ```cpp
 SimpleTui<10, 5> tui(display);
 
-auto root = Panel{Text{"hello"}, Text{"world"}};
+auto root = Column{{.border = true}, Text{"hello"}, Text{"world"}};
 tui.setScreen(root);
 ```
 
 `setScreen` accepts **lvalues only**. The screen is stored by pointer, so a
-temporary (`tui.setScreen(Panel{...})`) would dangle once the call returns;
+temporary (`tui.setScreen(Column{...})`) would dangle once the call returns;
 passing one is rejected at compile time. Keep the root alive for as long as the
 `SimpleTui` may redraw it (a local that outlives the render loop, a `static`,
 or a global).

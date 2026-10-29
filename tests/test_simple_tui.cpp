@@ -129,6 +129,13 @@ TEST_CASE("Text render prints its string at the assigned box") {
     CHECK(display.lines() == expected);
 }
 
+TEST_CASE("Text default-constructs as an empty string") {
+    stui::Text t{};
+    t.measure(3, 1);
+    CHECK(t.measured_width() == 0);
+    CHECK(t.measured_height() == 1);
+}
+
 TEST_CASE("Text renders with its TextConfig colors and restores defaults") {
     class ColorDisplay : public stui::Display {
     public:
@@ -158,6 +165,44 @@ TEST_CASE("Text renders with its TextConfig colors and restores defaults") {
     def.render(display2);
     CHECK(display2.printed.fg == stui::color_white);
     CHECK(display2.printed.bg == stui::color_black);
+}
+
+TEST_CASE("Text with a border measures and renders its text inside") {
+    stui::Text t{"hi", {.border = true}};
+    t.measure(10, 10);
+    CHECK(t.measured_width() == 4);  // "hi" + two border columns
+    CHECK(t.measured_height() == 3); // one content row + two border rows
+
+    t.layout(0, 0, 4, 3);
+
+    TestDisplay display;
+    t.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌──┐",
+        "│hi│",
+        "└──┘",
+    };
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Text with a border elides inside the interior width") {
+    stui::Text t{"hello", {.border = true}};
+    t.measure(5, 3); // clamped to the available width
+    CHECK(t.measured_width() == 5);
+    CHECK(t.measured_height() == 3);
+
+    t.layout(0, 0, 5, 3);
+
+    TestDisplay display;
+    t.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌───┐",
+        "│he…│",
+        "└───┘",
+    };
+    CHECK(display.lines() == expected);
 }
 
 TEST_CASE("Text elides with an ellipsis when wider than its box") {
@@ -215,13 +260,11 @@ TEST_CASE("Column stacks children vertically") {
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Column stacks wrap-content panels at their own heights") {
-    stui::Column<stui::Panel<stui::Text, stui::Text, stui::Text>,
-                 stui::Panel<stui::Text>>
-        col{
-            stui::Panel<stui::Text, stui::Text, stui::Text>{
-                stui::Text{"a"}, stui::Text{"b"}, stui::Text{"c"}},
-            stui::Panel<stui::Text>{stui::Text{"d"}}};
+TEST_CASE("Column stacks bordered columns at their own heights") {
+    stui::Column col{
+        stui::Column{{.border = true},
+                     stui::Text{"a"}, stui::Text{"b"}, stui::Text{"c"}},
+        stui::Column{{.border = true}, stui::Text{"d"}}};
 
     col.measure(16, 12);
     // (3 content rows + 2 border) + (1 content row + 2 border)
@@ -246,10 +289,10 @@ TEST_CASE("Column stacks wrap-content panels at their own heights") {
 }
 
 TEST_CASE("Column keeps content children visible when fill children would starve them") {
-    stui::Column<stui::Text, stui::Panel<stui::Text>, stui::Panel<stui::Text>> col{
+    stui::Column col{
         stui::Text{"hi"},
-        stui::Panel<stui::Text>{stui::Text{"a"}},
-        stui::Panel<stui::Text>{stui::Text{"b"}}};
+        stui::Column{{.border = true}, stui::Text{"a"}},
+        stui::Column{{.border = true}, stui::Text{"b"}}};
 
     col.measure(16, 9);
     col.layout(0, 0, 16, 9);
@@ -270,27 +313,27 @@ TEST_CASE("Column keeps content children visible when fill children would starve
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Column measures wrap-content panels by their content height") {
-    stui::Column<stui::Panel<stui::Text>, stui::Panel<stui::Text>> col{
-        stui::Panel<stui::Text>{stui::Text{"a"}},
-        stui::Panel<stui::Text>{stui::Text{"b"}}};
+TEST_CASE("Column measures bordered columns by their content") {
+    stui::Column col{
+        stui::Column{{.border = true}, stui::Text{"a"}},
+        stui::Column{{.border = true}, stui::Text{"b"}}};
 
     col.measure(5, 6);
-    CHECK(col.measured_width() == 5);  // panels fill the assigned width
+    CHECK(col.measured_width() == 3);  // "a" + two border columns
     CHECK(col.measured_height() == 6); // (1 + 2) * 2
 
-    col.layout(0, 0, 5, 6);
+    col.layout(0, 0, 3, 6);
 
     TestDisplay display;
     col.render(display);
 
     const std::vector<std::string> expected = {
-        "┌───┐",
-        "│a  │",
-        "└───┘",
-        "┌───┐",
-        "│b  │",
-        "└───┘",
+        "┌─┐",
+        "│a│",
+        "└─┘",
+        "┌─┐",
+        "│b│",
+        "└─┘",
     };
     CHECK(display.lines() == expected);
 }
@@ -315,7 +358,7 @@ TEST_CASE("Row places children horizontally with no space by default") {
 }
 
 TEST_CASE("Row custom spacing separates children") {
-    stui::Row<stui::Text, stui::Text> row{2, stui::Text{"ab"}, stui::Text{"cd"}};
+    stui::Row row{{.spacing = 2}, stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
     CHECK(row.measured_width() == 6); // 2 + 2 (spacing) + 2
     row.layout(0, 0, 6, 1);
@@ -324,6 +367,32 @@ TEST_CASE("Row custom spacing separates children") {
     row.render(display);
 
     const std::vector<std::string> expected = {"ab  cd"};
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Column custom spacing separates children vertically") {
+    stui::Column col{
+        {.spacing = 1},
+        stui::Column{{.border = true}, stui::Text{"a"}},
+        stui::Column{{.border = true}, stui::Text{"b"}}};
+
+    col.measure(3, 10);
+    CHECK(col.measured_height() == 7); // (1 + 2) + 1 spacing + (1 + 2)
+
+    col.layout(0, 0, 3, 7);
+
+    TestDisplay display;
+    col.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌─┐",
+        "│a│",
+        "└─┘",
+        "",
+        "┌─┐",
+        "│b│",
+        "└─┘",
+    };
     CHECK(display.lines() == expected);
 }
 
@@ -358,11 +427,56 @@ TEST_CASE("Row repositions children when a Text buffer grows") {
     CHECK(display.lines() == std::vector<std::string>{"dist: 10 m"});
 }
 
+TEST_CASE("Row accepts a LayoutConfig first argument via CTAD and draws a border") {
+    stui::Row row{{.border = true}, stui::Text{"ab"}, stui::Text{"cd"}};
+    static_assert(
+        std::is_same_v<decltype(row), stui::Row<stui::Text, stui::Text>>);
+
+    row.measure(10, 3);
+    CHECK(row.measured_width() == 6);  // "abcd" + two border columns
+    CHECK(row.measured_height() == 3); // one content row + two border rows
+
+    row.layout(0, 0, 6, 3);
+
+    TestDisplay display;
+    row.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌────┐",
+        "│abcd│",
+        "└────┘",
+    };
+    CHECK(display.lines() == expected);
+}
+
+TEST_CASE("Column accepts a LayoutConfig first argument via CTAD and draws a border") {
+    stui::Column col{{.border = true}, stui::Text{"ab"}, stui::Text{"cd"}};
+    static_assert(std::is_same_v<decltype(col),
+                                 stui::Column<stui::Text, stui::Text>>);
+
+    col.measure(6, 10);
+    CHECK(col.measured_width() == 4);  // "ab"/"cd" + two border columns
+    CHECK(col.measured_height() == 4); // two content rows + two border rows
+
+    col.layout(0, 0, 4, 4);
+
+    TestDisplay display;
+    col.render(display);
+
+    const std::vector<std::string> expected = {
+        "┌──┐",
+        "│ab│",
+        "│cd│",
+        "└──┘",
+    };
+    CHECK(display.lines() == expected);
+}
+
 TEST_CASE("Row shrinks fill children so it never exceeds its assigned width") {
-    stui::Row<stui::Panel<stui::Text>, stui::Panel<stui::Text>> row{
-        4,
-        stui::Panel<stui::Text>{stui::Text{"a"}},
-        stui::Panel<stui::Text>{stui::Text{"b"}}};
+    stui::Row row{
+        {.spacing = 4},
+        stui::Column{{.border = true}, stui::Text{"a"}},
+        stui::Column{{.border = true}, stui::Text{"b"}}};
 
     row.measure(10, 3);
     CHECK(row.measured_width() == 10); // clamped to the available width
@@ -381,46 +495,19 @@ TEST_CASE("Row shrinks fill children so it never exceeds its assigned width") {
     CHECK(display.lines() == expected);
 }
 
-TEST_CASE("Panel wraps its content height and fills the available width") {
-    stui::Panel<stui::Text> panel{stui::Text{"hi"}};
-    panel.measure(5, 3);
-    CHECK(panel.measured_width() == 5);  // fills the assigned width
-    CHECK(panel.measured_height() == 3); // 1 content row + two borders
-
-    stui::Panel<stui::Text> narrow{stui::Text{"hello"}};
-    narrow.measure(4, 2);
-    CHECK(narrow.measured_width() == 4);
-    CHECK(narrow.measured_height() == 2); // clamped
-}
-
-TEST_CASE("Panel draws a border and renders its children inside") {
-    stui::Panel<stui::Text> panel{stui::Text{"hi"}};
-    panel.measure(5, 3);
-    panel.layout(0, 0, 5, 3);
-
-    TestDisplay display;
-    panel.render(display);
-
-    const std::vector<std::string> expected = {
-        "┌───┐",
-        "│hi │",
-        "└───┘",
-    };
-    CHECK(display.lines() == expected);
-}
-
-TEST_CASE("Panel fits children inside its interior, above the bottom border") {
-    stui::Panel<stui::Text, stui::Panel<stui::Text>> panel{
+TEST_CASE("Bordered Column fits children inside its interior, above the bottom border") {
+    stui::Column outer{
+        {.border = true},
         stui::Text{"title"},
-        stui::Panel<stui::Text>{stui::Text{"abc"}}};
+        stui::Column{{.border = true}, stui::Text{"abc"}}};
 
-    // Interior is 8x4, but the children measure 1 + 4 = 5 rows: the inner
-    // panel must shrink to 3 rows instead of covering the outer bottom border.
-    panel.measure(10, 6);
-    panel.layout(0, 0, 10, 6);
+    // Interior is 8x4, but the children measure 1 + 3 = 4 rows: the inner
+    // column must share the height instead of covering the outer bottom border.
+    outer.measure(10, 6);
+    outer.layout(0, 0, 10, 6);
 
     TestDisplay display;
-    panel.render(display);
+    outer.render(display);
 
     const std::vector<std::string> expected = {
         "┌────────┐",

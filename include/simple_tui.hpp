@@ -39,6 +39,14 @@ constexpr bool operator!=(const Colors& a, const Colors& b) { return !(a == b); 
 
 struct TextConfig {
     Colors colors;
+    bool border = false;
+};
+
+// Shared by layout containers (Row, Column). Pass it as the first argument to
+// opt in; the default keeps the previous borderless behaviour.
+struct LayoutConfig {
+    bool border = false;
+    uint16_t spacing = 0;
 };
 
 class Display {
@@ -81,14 +89,18 @@ inline uint16_t fit_dimension(uint16_t desired, uint16_t total, uint16_t avail) 
 // overlapped by a following fill child.
 template <typename Tuple>
 inline void layout_vertically(const Tuple& children, uint16_t x, uint16_t y,
-                              uint16_t w, uint16_t h) {
-    uint16_t total_h = 0;
+                              uint16_t w, uint16_t h, uint16_t spacing) {
+    uint16_t total_h = 0, count = 0;
     std::apply([&](const auto&... c) {
-        ((total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
+        ((total_h = static_cast<uint16_t>(total_h + c.measured_height()),
+          ++count), ...);
     }, children);
 
+    const uint16_t gaps = (count > 1) ? static_cast<uint16_t>(spacing * (count - 1)) : 0;
+    const uint16_t avail = (h > gaps) ? static_cast<uint16_t>(h - gaps) : 0;
+
     uint16_t cy = y;
-    uint16_t remaining = h;
+    uint16_t remaining = avail;
     uint16_t remaining_desired = total_h;
     auto place = [&](const auto& c) {
         uint16_t desired = c.measured_height();
@@ -98,7 +110,7 @@ inline void layout_vertically(const Tuple& children, uint16_t x, uint16_t y,
         if (share > remaining)
             share = remaining;
         c.layout(x, cy, w, share);
-        cy = static_cast<uint16_t>(cy + share);
+        cy = static_cast<uint16_t>(cy + share + spacing);
         remaining = static_cast<uint16_t>(remaining - share);
         remaining_desired = (remaining_desired > desired)
                                 ? static_cast<uint16_t>(remaining_desired - desired)
@@ -148,14 +160,17 @@ protected:
 
 class Text : public Widget {
 public:
+    Text() : str_(""), config_{} {}
+
     explicit Text(const char* str, TextConfig config = {})
         : str_(str), config_(config) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
-        (void) avail_w;
-        (void) avail_h;
-        mw_ = static_cast<uint16_t>(strlen(str_));
-        mh_ = 1;
+        const uint16_t border = config_.border ? 2 : 0;
+        uint32_t full_w = static_cast<uint32_t>(strlen(str_)) + border;
+        uint32_t full_h = static_cast<uint32_t>(1) + border;
+        mw_ = (full_w > avail_w) ? avail_w : static_cast<uint16_t>(full_w);
+        mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
@@ -163,41 +178,48 @@ public:
     }
 
     void render(const Display& d) const override {
-        if (w_ == 0) {
+        uint16_t vx = x_, vy = y_, vw = w_;
+        if (config_.border) {
+            draw_rect(d, x_, y_, w_, h_);
+            vx = static_cast<uint16_t>(x_ + 1);
+            vy = static_cast<uint16_t>(y_ + 1);
+            vw = (w_ > 2) ? static_cast<uint16_t>(w_ - 2) : 0;
+        }
+        if (vw == 0) {
             painted_ = 0;
             return;
         }
         char sp[2] = {' ', 0};
         for (uint16_t i = 0; i < painted_; ++i)
-            d.print(static_cast<uint16_t>(x_ + i), y_, sp);
+            d.print(static_cast<uint16_t>(vx + i), vy, sp);
 
         d.setColors(config_.colors);
         uint16_t full = static_cast<uint16_t>(strlen(str_));
         uint16_t drawn = 0;
-        if (full > w_ && static_cast<uint32_t>(scroll_) + w_ > full) {
+        if (full > vw && static_cast<uint32_t>(scroll_) + vw > full) {
             // The visible window runs past the end of the string: print the
             // tail, a three-space gap, then continue from the beginning.
             const uint16_t cycle = static_cast<uint16_t>(full + scroll_gap);
             char buf[2] = {0, 0};
-            for (uint16_t i = 0; i < w_; ++i) {
+            for (uint16_t i = 0; i < vw; ++i) {
                 uint16_t p = static_cast<uint16_t>(
                     (static_cast<uint32_t>(scroll_) + i) % cycle);
                 buf[0] = (p < full) ? str_[p] : ' ';
-                d.print(static_cast<uint16_t>(x_ + i), y_, buf);
+                d.print(static_cast<uint16_t>(vx + i), vy, buf);
             }
-            drawn = w_;
+            drawn = vw;
         } else if (scroll_ < full) {
             const char* s = str_ + scroll_;
             uint16_t n = static_cast<uint16_t>(full - scroll_);
-            bool elide = n > w_;
-            uint16_t show = elide ? static_cast<uint16_t>(w_ - 1) : n;
+            bool elide = n > vw;
+            uint16_t show = elide ? static_cast<uint16_t>(vw - 1) : n;
             char buf[2] = {0, 0};
             for (uint16_t i = 0; i < show; ++i) {
                 buf[0] = s[i];
-                d.print(static_cast<uint16_t>(x_ + i), y_, buf);
+                d.print(static_cast<uint16_t>(vx + i), vy, buf);
             }
             if (elide)
-                d.print(static_cast<uint16_t>(x_ + w_ - 1), y_, glyph_ellipsis);
+                d.print(static_cast<uint16_t>(vx + vw - 1), vy, glyph_ellipsis);
             drawn = static_cast<uint16_t>(show + (elide ? 1 : 0));
         }
         painted_ = drawn;
@@ -208,8 +230,11 @@ public:
     uint16_t scroll() const { return scroll_; }
 
     void tick() const override {
+        const uint16_t vw = config_.border
+                                ? (w_ > 2 ? static_cast<uint16_t>(w_ - 2) : 0)
+                                : w_;
         uint16_t full = static_cast<uint16_t>(strlen(str_));
-        if (full <= w_) {
+        if (full <= vw) {
             scroll_ = 0;
             return;
         }
@@ -230,25 +255,50 @@ private:
 template <typename... Children>
 class Column : public Widget {
 public:
-    Column(const Children&... children) : children_(children...) {}
+    explicit Column(const Children&... children) : children_(children...) {}
+
+    Column(LayoutConfig config, const Children&... children)
+        : config_(config), children_(children...) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
-        uint16_t max_w = 0, total_h = 0;
+        const uint16_t iw = config_.border
+                                ? (avail_w > 2 ? static_cast<uint16_t>(avail_w - 2) : 0)
+                                : avail_w;
+        const uint16_t ih = config_.border
+                                ? (avail_h > 2 ? static_cast<uint16_t>(avail_h - 2) : 0)
+                                : avail_h;
+        uint16_t max_w = 0, total_h = 0, count = 0;
         std::apply([&](const auto&... c) {
-            ((c.measure(avail_w, avail_h),
+            ((c.measure(iw, ih),
               max_w = max_u16(max_w, c.measured_width()),
-              total_h = static_cast<uint16_t>(total_h + c.measured_height())), ...);
+              total_h = static_cast<uint16_t>(total_h + c.measured_height()),
+              ++count), ...);
         }, children_);
-        mw_ = max_w;
-        mh_ = (total_h > avail_h) ? avail_h : total_h;
+        if (count > 1)
+            total_h = static_cast<uint16_t>(
+                total_h + config_.spacing * (count - 1));
+        const uint16_t border = config_.border ? 2 : 0;
+        uint32_t full_w = static_cast<uint32_t>(max_w) + border;
+        uint32_t full_h = static_cast<uint32_t>(total_h) + border;
+        mw_ = (full_w > avail_w) ? avail_w : static_cast<uint16_t>(full_w);
+        mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
         x_ = x; y_ = y; w_ = w; h_ = h;
-        layout_vertically(children_, x, y, w, h);
+        uint16_t ix = x, iy = y, iw = w, ih = h;
+        if (config_.border) {
+            ix = static_cast<uint16_t>(x + 1);
+            iy = static_cast<uint16_t>(y + 1);
+            iw = (w > 2) ? static_cast<uint16_t>(w - 2) : 0;
+            ih = (h > 2) ? static_cast<uint16_t>(h - 2) : 0;
+        }
+        layout_vertically(children_, ix, iy, iw, ih, config_.spacing);
     }
 
     void render(const Display& d) const override {
+        if (config_.border)
+            draw_rect(d, x_, y_, w_, h_);
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
 
@@ -257,46 +307,67 @@ public:
     }
 
 private:
+    LayoutConfig config_;
     std::tuple<const Children...> children_;
 };
 
 template <typename... Children>
 class Row : public Widget {
 public:
-    explicit Row(const Children&... children) : Row(0, children...) {}
+    explicit Row(const Children&... children) : children_(children...) {}
 
-    Row(uint16_t spacing, const Children&... children)
-        : spacing_(spacing), children_(children...) {}
+    Row(LayoutConfig config, const Children&... children)
+        : config_(config), children_(children...) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
+        const uint16_t iw = config_.border
+                                ? (avail_w > 2 ? static_cast<uint16_t>(avail_w - 2) : 0)
+                                : avail_w;
+        const uint16_t ih = config_.border
+                                ? (avail_h > 2 ? static_cast<uint16_t>(avail_h - 2) : 0)
+                                : avail_h;
         uint16_t total_w = 0, max_h = 0, count = 0;
         std::apply([&](const auto&... c) {
-            ((c.measure(avail_w, avail_h),
+            ((c.measure(iw, ih),
               total_w = static_cast<uint16_t>(total_w + c.measured_width()),
               max_h = max_u16(max_h, c.measured_height()),
               ++count), ...);
         }, children_);
         if (count > 1)
-            total_w = static_cast<uint16_t>(total_w + spacing_ * (count - 1));
-        mw_ = (total_w > avail_w) ? avail_w : total_w;
-        mh_ = max_h;
+            total_w = static_cast<uint16_t>(
+                total_w + config_.spacing * (count - 1));
+        const uint16_t border = config_.border ? 2 : 0;
+        uint32_t full_w = static_cast<uint32_t>(total_w) + border;
+        uint32_t full_h = static_cast<uint32_t>(max_h) + border;
+        mw_ = (full_w > avail_w) ? avail_w : static_cast<uint16_t>(full_w);
+        mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
         x_ = x; y_ = y; w_ = w; h_ = h;
+
+        uint16_t ix = x, iy = y, iw = w, ih = h;
+        if (config_.border) {
+            ix = static_cast<uint16_t>(x + 1);
+            iy = static_cast<uint16_t>(y + 1);
+            iw = (w > 2) ? static_cast<uint16_t>(w - 2) : 0;
+            ih = (h > 2) ? static_cast<uint16_t>(h - 2) : 0;
+        }
 
         uint16_t total_w = 0, count = 0;
         std::apply([&](const auto&... c) {
             ((total_w = static_cast<uint16_t>(total_w + c.measured_width()),
               ++count), ...);
         }, children_);
-        const uint16_t gaps = (count > 1) ? static_cast<uint16_t>(spacing_ * (count - 1)) : 0;
-        const uint16_t avail = (w > gaps) ? static_cast<uint16_t>(w - gaps) : 0;
+        const uint16_t gaps = (count > 1)
+                                  ? static_cast<uint16_t>(config_.spacing * (count - 1))
+                                  : 0;
+        const uint16_t avail = (iw > gaps) ? static_cast<uint16_t>(iw - gaps) : 0;
 
-        uint16_t cx = x;
+        uint16_t cx = ix;
         std::apply([&](const auto&... c) {
-            ((c.layout(cx, y, fit_dimension(c.measured_width(), total_w, avail), h),
-              cx = static_cast<uint16_t>(cx + fit_dimension(c.measured_width(), total_w, avail) + spacing_)), ...);
+            ((c.layout(cx, iy, fit_dimension(c.measured_width(), total_w, avail), ih),
+              cx = static_cast<uint16_t>(cx + fit_dimension(c.measured_width(), total_w, avail) + config_.spacing)), ...);
         }, children_);
     }
 
@@ -306,6 +377,8 @@ public:
         // currently ends (e.g. "dist: " + "10" + " m").
         measure(w_, h_);
         layout(x_, y_, w_, h_);
+        if (config_.border)
+            draw_rect(d, x_, y_, w_, h_);
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
 
@@ -314,49 +387,7 @@ public:
     }
 
 private:
-    uint16_t spacing_ = 0;
-    std::tuple<const Children...> children_;
-};
-
-template <typename... Children>
-class Panel : public Widget {
-public:
-    Panel(const Children&... children) : children_(children...) {}
-
-    void measure(uint16_t avail_w, uint16_t avail_h) const override {
-        // Fill the assigned width (panels in a row share their column), but
-        // wrap the height to the stacked content plus the two border rows.
-        mw_ = avail_w;
-        uint16_t iw = (avail_w > 2) ? static_cast<uint16_t>(avail_w - 2) : 0;
-        uint16_t ih = (avail_h > 2) ? static_cast<uint16_t>(avail_h - 2) : 0;
-        uint16_t content_h = 0;
-        std::apply([&](const auto&... c) {
-            ((c.measure(iw, ih),
-              content_h = static_cast<uint16_t>(content_h + c.measured_height())), ...);
-        }, children_);
-        uint32_t full_h = static_cast<uint32_t>(content_h) + 2;
-        mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
-    }
-
-    void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
-        x_ = x; y_ = y; w_ = w; h_ = h;
-        uint16_t ix = static_cast<uint16_t>(x + 1);
-        uint16_t iy = static_cast<uint16_t>(y + 1);
-        uint16_t iw = (w > 2) ? static_cast<uint16_t>(w - 2) : 0;
-        uint16_t ih = (h > 2) ? static_cast<uint16_t>(h - 2) : 0;
-        layout_vertically(children_, ix, iy, iw, ih);
-    }
-
-    void render(const Display& d) const override {
-        draw_rect(d, x_, y_, w_, h_);
-        std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
-    }
-
-    void tick() const override {
-        std::apply([&](const auto&... c) { (c.tick(), ...); }, children_);
-    }
-
-private:
+    LayoutConfig config_;
     std::tuple<const Children...> children_;
 };
 

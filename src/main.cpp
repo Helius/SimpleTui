@@ -22,22 +22,22 @@ int main() {
     int counter = 0;
     char distance[12] = "0";
 
-    const auto root = Panel{
+    const auto root = Column{
+      {.border = true},
       Text{"Main motors are disabled by safety switch",
         {.colors = {.fg = color_green}}
       },
       Row{
+        {.spacing = 0},
         Column{
-          Panel{
-              Text{"battery: 3.9V"},
-              Text{"WIFI: -66 dBm"},
-              Text{"current: 0.1mA"}
-          },
-          Panel{
-            Text{"x,y: 0,0"}
-          },
+          {.spacing = 0},
+            Text{""},
+            Text{"battery: 3.9V"},
+            Text{"WIFI: -66 dBm"},
+            Text{"x,y: 0,0", {.border = true}}
         },
-        Panel{
+        Column{
+          {.border = true},
           Row{
             Text{"dist: ", {.colors = {.bg = color_blue}}},
             Text{distance, {.colors = {.fg = color_red, .bg = color_blue}}},

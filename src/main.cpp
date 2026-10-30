@@ -28,7 +28,7 @@ int main() {
         {.colors = {.fg = color_green}}
       },
       Row{
-        {.spacing = 0},
+        {.spacing = 1},
         Column{
           {.spacing = 0},
             Text{""},

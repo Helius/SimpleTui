@@ -22,11 +22,21 @@ int main() {
     int counter = 0;
     char distance[12] = "0";
 
-    const auto root = Column{
-      {.border = true},
-      Text{"Main motors are disabled by safety switch",
-        {.colors = {.fg = color_green}}
-      },
+    auto pageIndicator = Text {"[*   ]"};
+    auto batteryIndicator = Text {"[bat:78%]"};
+    auto wifiIndicator = Text {"[wifi:-66dBm]"};
+
+    auto header = Row {
+
+        {.spacing = 2},
+        pageIndicator,
+        batteryIndicator,
+        wifiIndicator
+    };
+
+    auto page0 = Column{
+      {.border = false},
+      header,
       Row{
         {.spacing = 1},
         Column{
@@ -37,7 +47,7 @@ int main() {
             Text{"x,y: 0,0", {.border = true}}
         },
         Column{
-          {.border = true},
+          {.border = true, .color = {.fg = color_green, .bg = color_blue}},
           Row{
             Text{"dist: ", {.colors = {.bg = color_blue}}},
             Text{distance, {.colors = {.fg = color_red, .bg = color_blue}}},
@@ -52,7 +62,7 @@ int main() {
       }
     };
 
-    tui.setScreen(root);
+    tui.setScreen(page0);
 
     std::atomic<bool> running{true};
     std::thread worker([&] {

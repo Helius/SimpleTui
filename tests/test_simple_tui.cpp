@@ -449,6 +449,92 @@ TEST_CASE("Row accepts a LayoutConfig first argument via CTAD and draws a border
     CHECK(display.lines() == expected);
 }
 
+TEST_CASE("Row renders its border with the LayoutConfig color") {
+    class RecordingDisplay : public stui::Display {
+    public:
+        struct Draw {
+            uint16_t x;
+            uint16_t y;
+            std::string str;
+            stui::Colors colors;
+        };
+
+        void clear() const override {}
+        void setColors(const stui::Colors& c) const override { current = c; }
+        void print(uint16_t x, uint16_t y, const char* str) const override {
+            draws.push_back({x, y, str != nullptr ? str : "", current});
+        }
+
+        mutable stui::Colors current{};
+        mutable std::vector<Draw> draws;
+    };
+
+    const stui::Colors borderColors{.fg = stui::color_green,
+                                    .bg = stui::color_blue};
+    stui::Row row{
+        {.border = true, .color = borderColors},
+        stui::Text{"ab"},
+        stui::Text{"cd"}};
+    row.measure(10, 3);
+    row.layout(0, 0, 6, 3);
+
+    RecordingDisplay display;
+    row.render(display);
+
+    REQUIRE(display.draws.size() > 6);
+    CHECK(display.draws.front().colors == borderColors);
+    CHECK(display.draws[5].colors == borderColors); // top-right corner
+    for (const auto& draw : display.draws) {
+        if (draw.str == "a" || draw.str == "b" || draw.str == "c" ||
+            draw.str == "d") {
+            CHECK(draw.colors == stui::Colors{});
+        }
+    }
+}
+
+TEST_CASE("Column renders its border with the LayoutConfig color") {
+    class RecordingDisplay : public stui::Display {
+    public:
+        struct Draw {
+            uint16_t x;
+            uint16_t y;
+            std::string str;
+            stui::Colors colors;
+        };
+
+        void clear() const override {}
+        void setColors(const stui::Colors& c) const override { current = c; }
+        void print(uint16_t x, uint16_t y, const char* str) const override {
+            draws.push_back({x, y, str != nullptr ? str : "", current});
+        }
+
+        mutable stui::Colors current{};
+        mutable std::vector<Draw> draws;
+    };
+
+    const stui::Colors borderColors{.fg = stui::color_yellow,
+                                    .bg = stui::color_blue};
+    stui::Column col{
+        {.border = true, .color = borderColors},
+        stui::Text{"ab"},
+        stui::Text{"cd"}};
+    col.measure(6, 10);
+    col.layout(0, 0, 4, 4);
+
+    RecordingDisplay display;
+    col.render(display);
+
+    REQUIRE_FALSE(display.draws.empty());
+    CHECK(display.draws.front().colors == borderColors);
+    CHECK(display.draws[3].colors == borderColors);
+    for (const auto& draw : display.draws) {
+        if (draw.str == "a" || draw.str == "b" || draw.str == "c" ||
+            draw.str == "d") {
+            CHECK(draw.colors == stui::Colors{});
+        }
+    }
+}
+
 TEST_CASE("Column accepts a LayoutConfig first argument via CTAD and draws a border") {
     stui::Column col{{.border = true}, stui::Text{"ab"}, stui::Text{"cd"}};
     static_assert(std::is_same_v<decltype(col),

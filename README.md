@@ -68,20 +68,22 @@ simple-tui/
     and shrink oversized children proportionally. `Column` allocates rows
     sequentially and gives every non-empty child at least one row, so small
     content is not rounded away.
-  - **`LayoutConfig`** — `LayoutConfig{border = false, spacing = 0}` is
-    accepted as an optional first argument by `Row` and `Column`. `border`
+  - **`LayoutConfig`** — `LayoutConfig{border = false, spacing = 0, color = {}}`
+    is accepted as an optional first argument by `Row` and `Column`. `border`
     draws a rectangle with the children laid out inside it (the measured extent
     grows by the border); `spacing` is the gap between neighbours (horizontal
-    for `Row`, vertical for `Column`). Because the argument type is fixed, CTAD
+    for `Row`, vertical for `Column`); `color` is the foreground/background
+    color used to draw that border. Because the argument type is fixed, CTAD
     still deduces the child types, so no template arguments are needed:
     ```cpp
     Row{{.border = true}, Text{"a"}, Text{"b"}}
     Column{{.spacing = 1}, Text{"a"}, Text{"b"}}
-    Row{{.border = true, .spacing = 2}, Text{"a"}, Text{"b"}}
+    Row{{.border = true, .spacing = 2, .color = {.fg = color_green}},
+        Text{"a"}, Text{"b"}}
     ```
-    Designated initializers must follow declaration order (`border` then
-    `spacing`) when setting both. `Text{}` default-constructs an empty string,
-    so placeholder children work in this form.
+    Designated initializers must follow declaration order (`border`, then
+    `spacing`, then `color`) when setting several. `Text{}` default-constructs
+    an empty string, so placeholder children work in this form.
   - `Screen` — wraps a `const Widget&` root and forwards the three passes. No
     template arguments needed, since screens are always handled polymorphically.
   - `SimpleTui<Width, Height>` — render-only entry point. `setScreen(Widget&)`

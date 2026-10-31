@@ -47,6 +47,7 @@ struct TextConfig {
 struct LayoutConfig {
     bool border = false;
     uint16_t spacing = 0;
+    Colors color = Colors{};
 };
 
 class Display {
@@ -297,8 +298,11 @@ public:
     }
 
     void render(const Display& d) const override {
-        if (config_.border)
+        if (config_.border) {
+            d.setColors(config_.color);
             draw_rect(d, x_, y_, w_, h_);
+            d.setColors(Colors{});
+        }
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
 
@@ -377,8 +381,11 @@ public:
         // currently ends (e.g. "dist: " + "10" + " m").
         measure(w_, h_);
         layout(x_, y_, w_, h_);
-        if (config_.border)
+        if (config_.border) {
+            d.setColors(config_.color);
             draw_rect(d, x_, y_, w_, h_);
+            d.setColors(Colors{});
+        }
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
 

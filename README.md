@@ -4,6 +4,8 @@ A header-only C++ library for building simple text UI / terminal-style output,
 intended to run on an Arduino (MCU) while being developed and tested on the
 desktop.
 
+![320x240 display](doc/PXL_20261102_133113445.jpg)
+
 The library is a single header (`SimpleTui.h`) with no desktop-only
 dependencies (`<iostream>`, heavy STL, etc.), so the same code compiles for both
 the host tests and the microcontroller. The header lives in the project root to

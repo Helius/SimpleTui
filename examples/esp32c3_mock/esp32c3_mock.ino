@@ -1,14 +1,14 @@
-// Minimal Arduino example: drive simple-tui with an in-memory Display mock.
+// Minimal Arduino example: drive SimpleTui with an in-memory Display mock.
 // Compile for an ESP32-C3 from the repo root with:
 //   arduino-cli compile --fqbn esp32:esp32:esp32c3 \
-//       --build-property "compiler.cpp.extra_flags=-I$PWD/include" \
+//       --build-property "compiler.cpp.extra_flags=-I$PWD" \
 //       examples/esp32c3_mock
 //
 // Swap MockDisplay for a real LCD/OLED/Serial backend implementing the same
 // three Display methods; the widget tree stays unchanged.
 
 #include <Arduino.h>
-#include <simple_tui.hpp>
+#include <SimpleTui.h>
 
 class MockDisplay : public stui::Display {
 public:
@@ -50,7 +50,7 @@ static const auto root = stui::Column{
 void setup() {
     Serial.begin(115200);
     tui.setScreen(root);
-    Serial.printf("simple-tui rendered %lu cells\n",
+    Serial.printf("SimpleTui rendered %lu cells\n",
                   static_cast<unsigned long>(display.printed));
 }
 

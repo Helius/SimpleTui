@@ -1,23 +1,25 @@
-# simple-tui
+# SimpleTui
 
 A header-only C++ library for building simple text UI / terminal-style output,
 intended to run on an Arduino (MCU) while being developed and tested on the
 desktop.
 
-The library is a single header (`include/simple_tui.hpp`) with no desktop-only
+The library is a single header (`SimpleTui.h`) with no desktop-only
 dependencies (`<iostream>`, heavy STL, etc.), so the same code compiles for both
-the host tests and the microcontroller.
+the host tests and the microcontroller. The header lives in the project root to
+follow the Arduino library convention: `#include <SimpleTui.h>`.
 
 ## Structure
 
 ```
-simple-tui/
+SimpleTui/
 ├── CMakeLists.txt              # project config: INTERFACE lib, demo binary, tests
-├── include/
-│   └── simple_tui.hpp          # the header-only library (Arduino-safe)
+├── SimpleTui.h                 # the header-only library (Arduino-safe)
 ├── src/
-│   ├── main.cpp                # empty main() for manual behaviour checks
+│   ├── main.cpp                # runnable demo / manual behaviour checks
 │   └── terminal_display.hpp    # ANSI/stdout Display backend for the demo
+├── examples/
+│   └── esp32c3_mock/           # heap-free Arduino mock Display sketch
 ├── tests/
 │   ├── CMakeLists.txt          # pulls in doctest via FetchContent
 │   └── test_simple_tui.cpp     # unit tests (parameterized + mock Display)
@@ -26,7 +28,7 @@ simple-tui/
 
 ### Components
 
-- **`include/simple_tui.hpp`** — the library (namespace `stui`).
+- **`SimpleTui.h`** — the library (namespace `stui`).
   - `Display` — pure interface (`void clear()`, `void setColor(Color)`,
     `void setColors(const Colors&)` and
     `void print(uint16_t x, uint16_t y, const char* str)`) used as an output
@@ -42,10 +44,10 @@ simple-tui/
     character and codepoint. Widgets use them instead of inline escapes.
   - **Colors** — `Color{r, g, b}` (24-bit RGB, with `color_black`,
     `color_white`, `color_green` constants), `Colors{bg, fg}`, and
-    `TextConfig{colors, border = false}`. `Text` takes a `TextConfig` as its
+    `TextConfig{color, border = false}`. `Text` takes a `TextConfig` as its
     second argument, defaulting to white on black and no border:
     ```cpp
-    Text{"dist", {.colors = {.fg = color_green}}}
+    Text{"dist", {.color = {.fg = color_green}}}
     Text{"boxed", {.border = true}}
     ```
     `TextConfig` is the place to add further per-text settings later.
@@ -164,7 +166,7 @@ cmake --build build
 cd build && ctest --output-on-failure
 
 # run the manual demo binary
-./build/simple_tui_run
+./build/SimpleTuiRun
 ```
 
 To skip tests (e.g. a lean build):
@@ -176,14 +178,15 @@ cmake -S . -B build -DBUILD_TESTING=OFF
 To skip `compile_commands.json` generation:
 
 ```bash
-cmake -S . -B build -DSIMPLE_TUI_EXPORT_COMPILE_COMMANDS=OFF
+cmake -S . -B build -DSIMPLETUI_EXPORT_COMPILE_COMMANDS=OFF
 ```
 
 ## Using on Arduino
 
-The library is header-only: copy (or symlink) `include/simple_tui.hpp` into your
-Arduino sketch's folder and `#include "simple_tui.hpp"`. Implement `Display`
-for your hardware and pass it to the `SimpleTui` constructor.
+The library is header-only: copy (or symlink) `SimpleTui.h` into your Arduino
+sketch's folder and `#include "SimpleTui.h"`. Implement `Display` for your
+hardware and pass it to the `SimpleTui` constructor. See
+`examples/esp32c3_mock/` for a minimal heap-free sketch.
 
 For now it expect to be able to print at least this characters,
 make sure your font support them

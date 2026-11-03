@@ -9,7 +9,7 @@
 // Not Arduino-safe on purpose (uses <iostream>); it lives in src/, not in
 // the header-only library.
 
-#include <simple_tui.hpp>
+#include <SimpleTui.h>
 
 #include <cstdint>
 #include <iostream>

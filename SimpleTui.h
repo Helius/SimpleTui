@@ -38,7 +38,7 @@ constexpr bool operator==(const Colors& a, const Colors& b) {
 constexpr bool operator!=(const Colors& a, const Colors& b) { return !(a == b); }
 
 struct TextConfig {
-    Colors colors;
+    Colors color;
     bool border = false;
 };
 
@@ -194,7 +194,7 @@ public:
         for (uint16_t i = 0; i < painted_; ++i)
             d.print(static_cast<uint16_t>(vx + i), vy, sp);
 
-        d.setColors(config_.colors);
+        d.setColors(config_.color);
         uint16_t full = static_cast<uint16_t>(strlen(str_));
         uint16_t drawn = 0;
         if (full > vw && static_cast<uint32_t>(scroll_) + vw > full) {

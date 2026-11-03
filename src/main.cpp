@@ -1,4 +1,4 @@
-#include <simple_tui.hpp>
+#include <SimpleTui.h>
 
 #include "terminal_display.hpp"
 
@@ -49,9 +49,9 @@ int main() {
         Column{
           {.border = true, .color = {.fg = color_green, .bg = color_blue}},
           Row{
-            Text{"dist: ", {.colors = {.bg = color_blue}}},
-            Text{distance, {.colors = {.fg = color_red, .bg = color_blue}}},
-            Text{" m", {.colors = {.bg = color_blue}}},
+            Text{"dist: ", {.color = {.bg = color_blue}}},
+            Text{distance, {.color = {.fg = color_red, .bg = color_blue}}},
+            Text{" m", {.color = {.bg = color_blue}}},
           },
           Text{"tempr: 10"},
           Text{"press: 1013 hPa"},
@@ -62,7 +62,13 @@ int main() {
       }
     };
 
-    tui.setScreen(page0);
+    auto test = Row{
+      {.border = true, .spacing = 1},
+      Text{"one", {.border = true}},
+      Text{"two sd sdf sdf sd fsd fs df sd f"}
+    };
+
+    tui.setScreen(test);
 
     std::atomic<bool> running{true};
     std::thread worker([&] {

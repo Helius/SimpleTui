@@ -1,7 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
-#include <simple_tui.hpp>
+#include <SimpleTui.h>
 #include <stdint.h>
 
 #include <sstream>
@@ -147,7 +147,7 @@ TEST_CASE("Text renders with its TextConfig colors and restores defaults") {
         mutable stui::Colors printed{};
     };
 
-    stui::Text green{"hi", {.colors = {.fg = stui::color_green}}};
+    stui::Text green{"hi", {.color = {.fg = stui::color_green}}};
     green.measure(5, 1);
     green.layout(0, 0, 5, 1);
 

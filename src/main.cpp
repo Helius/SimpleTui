@@ -35,7 +35,7 @@ int main() {
     };
 
     auto page0 = Column{
-      {.border = false},
+      {.border = true},
       header,
       Row{
         {.spacing = 1},
@@ -62,13 +62,30 @@ int main() {
       }
     };
 
-    auto test = Row{
-      {.border = true, .spacing = 1},
-      Text{"one", {.border = true}},
-      Text{"two sd sdf sdf sd fsd fs df sd f"}
+    auto test = Column{
+      Row{
+        {.border = true, .spacing = 1},
+        Text{"1234"},
+        Text{"two sd sdf sdf sd fsd fs df sd f"}
+      },
+      Row{
+        {.border = true, .spacing = 1},
+        Text{"one two three for five six seven etc"},
+        Text{"123"}
+      },
+      Row{
+        {.border = false, .spacing = 1},
+        Text{"one two"},
+        Text{"123"}
+      },
+      Row{
+        {.border = true, .spacing = 1},
+        Text{"one two three for five six"},
+        Text{"123 29384710 1029384 109874"}
+      }
     };
 
-    tui.setScreen(test);
+    tui.setScreen(page0);
 
     std::atomic<bool> running{true};
     std::thread worker([&] {

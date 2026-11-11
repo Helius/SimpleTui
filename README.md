@@ -68,10 +68,15 @@ SimpleTui/
     `std::tuple<const Children...>` (no heap). `Column` stacks vertically
     (`max width × sum height + spacing`), `Row` places horizontally
     (total width = sum of child widths + `spacing` between neighbours, height =
-    max child height). Both clamp their measured extent to the available space
-    and shrink oversized children proportionally. `Column` allocates rows
-    sequentially and gives every non-empty child at least one row, so small
-    content is not rounded away.
+    max child height). Both clamp their measured extent to the available space.
+    Each child also reports a **minimum** size it can shrink to (`Text`: one
+    visible char/line, three with a border; `Row`/`Column`: the sum/max of their
+    children's minima plus `spacing` and the border). Layout is **greedy**:
+    children are visited in order and each gets its full measured size while
+    every following child can still fit at its minimum, otherwise it gets as
+    much as fits (at least its own minimum). So earlier children keep their
+    natural size and later ones shrink first, rather than every child
+    shrinking proportionally.
   - **`LayoutConfig`** — `LayoutConfig{border = false, spacing = 0, color = {}}`
     is accepted as an optional first argument by `Row` and `Column`. `border`
     draws a rectangle with the children laid out inside it (the measured extent

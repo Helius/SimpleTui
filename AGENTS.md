@@ -32,8 +32,12 @@ Desktop-only code belongs in `src/`, never in the library header.
 
 ## Conventions
 
-- `measure(avail_w, avail_h)` sets desired size (`mw_/mh_`); `layout(x,y,w,h)`
-  assigns the real box; measured size never moves a widget.
+- `measure(avail_w, avail_h)` sets desired size (`mw_/mh_`) and minimum size
+  (`min_w_/min_h_`); `layout(x,y,w,h)` assigns the real box; measured size
+  never moves a widget.
+- `Row`/`Column` layout is greedy: each child gets its full measured size
+  while later children can still fit at their `min_*`, else as much as fits.
+  `Text` skips rendering when its box has no content row (`h_` too small).
 - `Row`/`Column` accept an optional first `LayoutConfig{border, spacing}` via
   CTAD. `Text` accepts a `TextConfig{color, border}`.
 - `SimpleTui::setScreen` takes lvalues only (the screen is stored by pointer).

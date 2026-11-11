@@ -73,27 +73,17 @@ inline constexpr const char* glyph_ellipsis     = "\xE2\x80\xA6"; // … U+2026
 
 inline uint16_t max_u16(uint16_t a, uint16_t b) { return a > b ? a : b; }
 
-// Shrink one child's measured size proportionally when all children together
-// don't fit the space the parent assigned to them.
-inline uint16_t fit_dimension(uint16_t desired, uint16_t total, uint16_t avail) {
-    if (total == 0 || desired == 0)
-        return 0;
-    if (total <= avail)
-        return desired;
-    return static_cast<uint16_t>(
-        static_cast<uint32_t>(desired) * avail / total);
-}
-
-// Lay children out top-to-bottom in the given box. Heights are allocated
-// sequentially from the remaining budget, and a non-empty child always gets
-// at least one row, so small content children are never rounded to zero and
-// overlapped by a following fill child.
+// Lay children out top-to-bottom in the given box. Children are visited in
+// order; each gets its full measured height while every following child can
+// still fit at its minimum height, otherwise it gets as much as fits (at
+// least its own minimum). So earlier children keep their natural size and
+// later ones shrink first, rather than every child shrinking proportionally.
 template <typename Tuple>
 inline void layout_vertically(const Tuple& children, uint16_t x, uint16_t y,
                               uint16_t w, uint16_t h, uint16_t spacing) {
-    uint16_t total_h = 0, count = 0;
+    uint16_t count = 0, total_min = 0;
     std::apply([&](const auto&... c) {
-        ((total_h = static_cast<uint16_t>(total_h + c.measured_height()),
+        ((total_min = static_cast<uint16_t>(total_min + c.min_height()),
           ++count), ...);
     }, children);
 
@@ -102,20 +92,58 @@ inline void layout_vertically(const Tuple& children, uint16_t x, uint16_t y,
 
     uint16_t cy = y;
     uint16_t remaining = avail;
-    uint16_t remaining_desired = total_h;
+    uint16_t remaining_min = total_min;
     auto place = [&](const auto& c) {
         uint16_t desired = c.measured_height();
-        uint16_t share = fit_dimension(desired, remaining_desired, remaining);
-        if (desired > 0 && share == 0 && remaining > 0)
-            share = 1;
-        if (share > remaining)
-            share = remaining;
+        uint16_t min_h = c.min_height();
+        uint16_t min_rest = (remaining_min > min_h)
+                                ? static_cast<uint16_t>(remaining_min - min_h) : 0;
+        uint16_t max_for = (remaining > min_rest)
+                                ? static_cast<uint16_t>(remaining - min_rest) : 0;
+        uint16_t share = (desired <= max_for) ? desired : max_for;
+        if (share < min_h) share = min_h;
+        if (share > remaining) share = remaining;
         c.layout(x, cy, w, share);
         cy = static_cast<uint16_t>(cy + share + spacing);
-        remaining = static_cast<uint16_t>(remaining - share);
-        remaining_desired = (remaining_desired > desired)
-                                ? static_cast<uint16_t>(remaining_desired - desired)
-                                : 0;
+        remaining = (remaining > share) ? static_cast<uint16_t>(remaining - share) : 0;
+        remaining_min = (remaining_min > min_h)
+                                ? static_cast<uint16_t>(remaining_min - min_h) : 0;
+    };
+    std::apply([&](const auto&... c) { (place(c), ...); }, children);
+}
+
+// Lay children out left-to-right; the horizontal counterpart of
+// layout_vertically, using each child's measured/min width the same way.
+template <typename Tuple>
+inline void layout_horizontally(const Tuple& children, uint16_t x, uint16_t y,
+                                uint16_t w, uint16_t h, uint16_t spacing) {
+    uint16_t count = 0, total_min = 0;
+    std::apply([&](const auto&... c) {
+        ((total_min = static_cast<uint16_t>(total_min + c.min_width()),
+          ++count), ...);
+    }, children);
+
+    const uint16_t gaps = (count > 1) ? static_cast<uint16_t>(spacing * (count - 1)) : 0;
+    const uint16_t avail = (w > gaps) ? static_cast<uint16_t>(w - gaps) : 0;
+
+    uint16_t cx = x;
+    uint16_t remaining = avail;
+    uint16_t remaining_min = total_min;
+    auto place = [&](const auto& c) {
+        uint16_t desired = c.measured_width();
+        uint16_t min_w = c.min_width();
+        uint16_t min_rest = (remaining_min > min_w)
+                                ? static_cast<uint16_t>(remaining_min - min_w) : 0;
+        uint16_t max_for = (remaining > min_rest)
+                                ? static_cast<uint16_t>(remaining - min_rest) : 0;
+        uint16_t share = (desired <= max_for) ? desired : max_for;
+        if (share < min_w) share = min_w;
+        if (share > remaining) share = remaining;
+        c.layout(cx, y, share, h);
+        cx = static_cast<uint16_t>(cx + share + spacing);
+        remaining = (remaining > share) ? static_cast<uint16_t>(remaining - share) : 0;
+        remaining_min = (remaining_min > min_w)
+                                ? static_cast<uint16_t>(remaining_min - min_w) : 0;
     };
     std::apply([&](const auto&... c) { (place(c), ...); }, children);
 }
@@ -153,10 +181,15 @@ public:
     uint16_t height() const { return h_; }
     uint16_t measured_width() const { return mw_; }
     uint16_t measured_height() const { return mh_; }
+    // Smallest box the widget can use while still showing something: the
+    // lower bound the greedy layout respects for later children.
+    uint16_t min_width() const { return min_w_; }
+    uint16_t min_height() const { return min_h_; }
 
 protected:
     mutable uint16_t x_ = 0, y_ = 0, w_ = 0, h_ = 0;
     mutable uint16_t mw_ = 0, mh_ = 0;
+    mutable uint16_t min_w_ = 0, min_h_ = 0;
 };
 
 class Text : public Widget {
@@ -168,10 +201,16 @@ public:
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
         const uint16_t border = config_.border ? 2 : 0;
-        uint32_t full_w = static_cast<uint32_t>(strlen(str_)) + border;
+        const uint16_t content = static_cast<uint16_t>(strlen(str_));
+        uint32_t full_w = static_cast<uint32_t>(content) + border;
         uint32_t full_h = static_cast<uint32_t>(1) + border;
         mw_ = (full_w > avail_w) ? avail_w : static_cast<uint16_t>(full_w);
         mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
+        // Minimum: at least one visible content cell (one char wide, one line
+        // tall), plus the border. Empty text asks for nothing (or just the
+        // border) so it works as a spacer.
+        min_w_ = (content > 0) ? static_cast<uint16_t>(1 + border) : border;
+        min_h_ = (content > 0) ? static_cast<uint16_t>(1 + border) : border;
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
@@ -179,6 +218,16 @@ public:
     }
 
     void render(const Display& d) const override {
+        // A text needs at least one content row (one line, or three with a
+        // border) to show anything. When the greedy layout starves a child to
+        // zero height, skip it instead of drawing past its box.
+        const uint16_t content_h = config_.border
+                                        ? (h_ > 2 ? static_cast<uint16_t>(h_ - 2) : 0)
+                                        : h_;
+        if (content_h == 0) {
+            painted_ = 0;
+            return;
+        }
         uint16_t vx = x_, vy = y_, vw = w_;
         if (config_.border) {
             draw_rect(d, x_, y_, w_, h_);
@@ -269,20 +318,30 @@ public:
                                 ? (avail_h > 2 ? static_cast<uint16_t>(avail_h - 2) : 0)
                                 : avail_h;
         uint16_t max_w = 0, total_h = 0, count = 0;
+        uint16_t min_max_w = 0, min_total_h = 0;
         std::apply([&](const auto&... c) {
             ((c.measure(iw, ih),
               max_w = max_u16(max_w, c.measured_width()),
               total_h = static_cast<uint16_t>(total_h + c.measured_height()),
+              min_max_w = max_u16(min_max_w, c.min_width()),
+              min_total_h = static_cast<uint16_t>(min_total_h + c.min_height()),
               ++count), ...);
         }, children_);
-        if (count > 1)
+        if (count > 1) {
             total_h = static_cast<uint16_t>(
                 total_h + config_.spacing * (count - 1));
+            min_total_h = static_cast<uint16_t>(
+                min_total_h + config_.spacing * (count - 1));
+        }
         const uint16_t border = config_.border ? 2 : 0;
         uint32_t full_w = static_cast<uint32_t>(max_w) + border;
         uint32_t full_h = static_cast<uint32_t>(total_h) + border;
         mw_ = (full_w > avail_w) ? avail_w : static_cast<uint16_t>(full_w);
         mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
+        // Column minimum: widest child's min width, summed children's min
+        // height plus spacing, each grown by the border.
+        min_w_ = static_cast<uint16_t>(static_cast<uint32_t>(min_max_w) + border);
+        min_h_ = static_cast<uint16_t>(static_cast<uint32_t>(min_total_h) + border);
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
@@ -331,20 +390,30 @@ public:
                                 ? (avail_h > 2 ? static_cast<uint16_t>(avail_h - 2) : 0)
                                 : avail_h;
         uint16_t total_w = 0, max_h = 0, count = 0;
+        uint16_t min_total_w = 0, min_max_h = 0;
         std::apply([&](const auto&... c) {
             ((c.measure(iw, ih),
               total_w = static_cast<uint16_t>(total_w + c.measured_width()),
               max_h = max_u16(max_h, c.measured_height()),
+              min_total_w = static_cast<uint16_t>(min_total_w + c.min_width()),
+              min_max_h = max_u16(min_max_h, c.min_height()),
               ++count), ...);
         }, children_);
-        if (count > 1)
+        if (count > 1) {
             total_w = static_cast<uint16_t>(
                 total_w + config_.spacing * (count - 1));
+            min_total_w = static_cast<uint16_t>(
+                min_total_w + config_.spacing * (count - 1));
+        }
         const uint16_t border = config_.border ? 2 : 0;
         uint32_t full_w = static_cast<uint32_t>(total_w) + border;
         uint32_t full_h = static_cast<uint32_t>(max_h) + border;
         mw_ = (full_w > avail_w) ? avail_w : static_cast<uint16_t>(full_w);
         mh_ = (full_h > avail_h) ? avail_h : static_cast<uint16_t>(full_h);
+        // Row minimum: summed children's min width plus spacing, tallest
+        // child's min height, each grown by the border.
+        min_w_ = static_cast<uint16_t>(static_cast<uint32_t>(min_total_w) + border);
+        min_h_ = static_cast<uint16_t>(static_cast<uint32_t>(min_max_h) + border);
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {
@@ -358,21 +427,7 @@ public:
             ih = (h > 2) ? static_cast<uint16_t>(h - 2) : 0;
         }
 
-        uint16_t total_w = 0, count = 0;
-        std::apply([&](const auto&... c) {
-            ((total_w = static_cast<uint16_t>(total_w + c.measured_width()),
-              ++count), ...);
-        }, children_);
-        const uint16_t gaps = (count > 1)
-                                  ? static_cast<uint16_t>(config_.spacing * (count - 1))
-                                  : 0;
-        const uint16_t avail = (iw > gaps) ? static_cast<uint16_t>(iw - gaps) : 0;
-
-        uint16_t cx = ix;
-        std::apply([&](const auto&... c) {
-            ((c.layout(cx, iy, fit_dimension(c.measured_width(), total_w, avail), ih),
-              cx = static_cast<uint16_t>(cx + fit_dimension(c.measured_width(), total_w, avail) + config_.spacing)), ...);
-        }, children_);
+        layout_horizontally(children_, ix, iy, iw, ih, config_.spacing);
     }
 
     void render(const Display& d) const override {
@@ -406,6 +461,8 @@ public:
         root_.measure(avail_w, avail_h);
         mw_ = root_.measured_width();
         mh_ = root_.measured_height();
+        min_w_ = root_.min_width();
+        min_h_ = root_.min_height();
     }
 
     void layout(uint16_t x, uint16_t y, uint16_t w, uint16_t h) const override {

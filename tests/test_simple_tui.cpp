@@ -737,3 +737,45 @@ TEST_CASE("SimpleTui::drawRect draws a rectangle") {
     };
     CHECK(display.lines() == expected);
 }
+
+TEST_CASE("Row gives earlier children their full width before shrinking later ones") {
+    stui::Row row{
+        stui::Text{"XY"},
+        stui::Text{"longtextlongtext"}}; // 16 chars
+    row.measure(10, 1);
+    row.layout(0, 0, 10, 1);
+
+    TestDisplay display;
+    row.render(display);
+
+    // "XY" keeps its full 2 cols; the 16-char text takes the remaining 8
+    // and elides. Proportional shrinking would have cut "XY" to one col.
+    CHECK(display.lines() ==
+          std::vector<std::string>{"XYlongtex\xE2\x80\xA6"});
+}
+
+TEST_CASE("Column gives earlier children their full height before shrinking later ones") {
+    stui::Column col{
+        stui::Column{{.border = true}, stui::Text{"a"}},
+        stui::Column{{.border = true}, stui::Text{"b"}, stui::Text{"c"},
+                     stui::Text{"d"}, stui::Text{"e"}}};
+
+    // Both inner columns want 3 and 6 rows (9 total); only 6 rows available.
+    col.measure(3, 6);
+    col.layout(0, 0, 3, 6);
+
+    TestDisplay display;
+    col.render(display);
+
+    // The first panel keeps its full 3 rows (with "a"); the second panel is
+    // shrunk to the remaining 3 rows (one content row, so only "b").
+    const std::vector<std::string> expected = {
+        "┌─┐",
+        "│a│",
+        "└─┘",
+        "┌─┐",
+        "│b│",
+        "└─┘",
+    };
+    CHECK(display.lines() == expected);
+}

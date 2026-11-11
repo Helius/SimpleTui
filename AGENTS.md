@@ -39,7 +39,13 @@ Desktop-only code belongs in `src/`, never in the library header.
   while later children can still fit at their `min_*`, else as much as fits.
   `Text` skips rendering when its box has no content row (`h_` too small).
 - `Row`/`Column` accept an optional first `LayoutConfig{border, spacing}` via
-  CTAD. `Text` accepts a `TextConfig{color, border}`.
+  CTAD. `Text` accepts a `TextConfig{border}` as its first argument.
+- Color is optional via EBO: `Text`, `Row`, `Column` are templates
+  `<ColorPolicy = NoColor, ...>` inheriting privately from `ColorPolicy`.
+  `NoColor` is an empty base (zero bytes via EBO); `WithColor { Colors value }`
+  stores a color. Pass `WithColor{...}` as the first decoration argument to
+  opt in — CTAD picks the specialization. All widgets use the same argument
+  order: decorations first (color, then config), then data (string or children).
 - `SimpleTui::setScreen` takes lvalues only (the screen is stored by pointer).
 - Designated initializers must follow declaration order.
 - New behavior is TDD: write a failing test first, then implement.

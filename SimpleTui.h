@@ -37,8 +37,13 @@ constexpr bool operator==(const Colors& a, const Colors& b) {
 
 constexpr bool operator!=(const Colors& a, const Colors& b) { return !(a == b); }
 
+// Color storage policies for EBO-based optional color (see Text, Row, Column).
+// NoColor is an empty base — zero bytes via Empty Base Optimization.
+// WithColor stores a Colors value; pass it as the first "decoration" argument.
+struct NoColor {};
+struct WithColor { Colors value; };
+
 struct TextConfig {
-    Colors color;
     bool border = false;
 };
 
@@ -47,7 +52,6 @@ struct TextConfig {
 struct LayoutConfig {
     bool border = false;
     uint16_t spacing = 0;
-    Colors color = Colors{};
 };
 
 class Display {
@@ -192,15 +196,37 @@ protected:
     mutable uint16_t min_w_ = 0, min_h_ = 0;
 };
 
-class Text : public Widget {
+// A text label with optional color (EBO: zero bytes when NoColor) and border.
+// Decoration arguments come first, then the string data:
+//   Text{"str"}                                          — no decoration
+//   Text{TextConfig{.border=true}, "str"}                — border
+//   Text{WithColor{...}, "str"}                          — color
+//   Text{WithColor{...}, TextConfig{.border=true}, "str"} — color + border
+template <typename ColorPolicy = NoColor>
+class Text : public Widget, private ColorPolicy {
 public:
-    Text() : str_(""), config_{} {}
+    Text() : str_(""), border_(false) {}
 
-    explicit Text(const char* str, TextConfig config = {})
-        : str_(str), config_(config) {}
+    explicit Text(const char* str) : str_(str), border_(false) {}
+
+    Text(TextConfig cfg, const char* str)
+        : str_(str), border_(cfg.border) {}
+
+    // WithColor constructors are SFINAE-gated so the implicit CTAD guide
+    // cannot deduce ColorPolicy from a non-color first argument (e.g. a Row
+    // child). Only the explicit deduction guides below select WithColor.
+    template <typename CP = ColorPolicy,
+              std::enable_if_t<std::is_same_v<CP, WithColor>, int> = 0>
+    Text(WithColor color, const char* str)
+        : ColorPolicy(color), str_(str), border_(false) {}
+
+    template <typename CP = ColorPolicy,
+              std::enable_if_t<std::is_same_v<CP, WithColor>, int> = 0>
+    Text(WithColor color, TextConfig cfg, const char* str)
+        : ColorPolicy(color), str_(str), border_(cfg.border) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
-        const uint16_t border = config_.border ? 2 : 0;
+        const uint16_t border = border_ ? 2 : 0;
         const uint16_t content = static_cast<uint16_t>(strlen(str_));
         uint32_t full_w = static_cast<uint32_t>(content) + border;
         uint32_t full_h = static_cast<uint32_t>(1) + border;
@@ -221,7 +247,7 @@ public:
         // A text needs at least one content row (one line, or three with a
         // border) to show anything. When the greedy layout starves a child to
         // zero height, skip it instead of drawing past its box.
-        const uint16_t content_h = config_.border
+        const uint16_t content_h = border_
                                         ? (h_ > 2 ? static_cast<uint16_t>(h_ - 2) : 0)
                                         : h_;
         if (content_h == 0) {
@@ -229,7 +255,7 @@ public:
             return;
         }
         uint16_t vx = x_, vy = y_, vw = w_;
-        if (config_.border) {
+        if (border_) {
             draw_rect(d, x_, y_, w_, h_);
             vx = static_cast<uint16_t>(x_ + 1);
             vy = static_cast<uint16_t>(y_ + 1);
@@ -243,7 +269,9 @@ public:
         for (uint16_t i = 0; i < painted_; ++i)
             d.print(static_cast<uint16_t>(vx + i), vy, sp);
 
-        d.setColors(config_.color);
+        if constexpr (!std::is_same_v<ColorPolicy, NoColor>) {
+            d.setColors(static_cast<const ColorPolicy&>(*this).value);
+        }
         uint16_t full = static_cast<uint16_t>(strlen(str_));
         uint16_t drawn = 0;
         if (full > vw && static_cast<uint32_t>(scroll_) + vw > full) {
@@ -273,14 +301,16 @@ public:
             drawn = static_cast<uint16_t>(show + (elide ? 1 : 0));
         }
         painted_ = drawn;
-        d.setColors(Colors{});
+        if constexpr (!std::is_same_v<ColorPolicy, NoColor>) {
+            d.setColors(Colors{});
+        }
     }
 
     void setScroll(uint16_t offset) const { scroll_ = offset; }
     uint16_t scroll() const { return scroll_; }
 
     void tick() const override {
-        const uint16_t vw = config_.border
+        const uint16_t vw = border_
                                 ? (w_ > 2 ? static_cast<uint16_t>(w_ - 2) : 0)
                                 : w_;
         uint16_t full = static_cast<uint16_t>(strlen(str_));
@@ -297,18 +327,43 @@ public:
 private:
     static constexpr uint16_t scroll_gap = 3; // spaces between end and start
     const char* str_;
-    TextConfig config_;
+    bool border_;
     mutable uint16_t scroll_ = 0;
     mutable uint16_t painted_ = 0;
 };
 
-template <typename... Children>
-class Column : public Widget {
+// CTAD: pick NoColor (zero-size base) unless a WithColor decoration is the
+// first argument.
+Text() -> Text<NoColor>;
+Text(const char*) -> Text<NoColor>;
+Text(TextConfig, const char*) -> Text<NoColor>;
+Text(WithColor, const char*) -> Text<WithColor>;
+Text(WithColor, TextConfig, const char*) -> Text<WithColor>;
+
+// Lay children top-to-bottom. ColorPolicy is an EBO base: NoColor adds zero
+// bytes, WithColor stores a Colors value. Decoration arguments come first:
+//   Column{child1, child2}                                     — no decoration
+//   Column{LayoutConfig{.border=true}, child1, child2}         — layout
+//   Column{WithColor{...}, child1, child2}                     — color
+//   Column{WithColor{...}, LayoutConfig{.border=true}, child1, child2} — both
+template <typename ColorPolicy = NoColor, typename... Children>
+class Column : public Widget, private ColorPolicy {
 public:
-    explicit Column(const Children&... children) : children_(children...) {}
+    explicit Column(const Children&... children)
+        : config_{}, children_(children...) {}
 
     Column(LayoutConfig config, const Children&... children)
         : config_(config), children_(children...) {}
+
+    template <typename CP = ColorPolicy,
+              std::enable_if_t<std::is_same_v<CP, WithColor>, int> = 0>
+    Column(WithColor color, const Children&... children)
+        : ColorPolicy(color), config_{}, children_(children...) {}
+
+    template <typename CP = ColorPolicy,
+              std::enable_if_t<std::is_same_v<CP, WithColor>, int> = 0>
+    Column(WithColor color, LayoutConfig config, const Children&... children)
+        : ColorPolicy(color), config_(config), children_(children...) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
         const uint16_t iw = config_.border
@@ -358,9 +413,13 @@ public:
 
     void render(const Display& d) const override {
         if (config_.border) {
-            d.setColors(config_.color);
+            if constexpr (!std::is_same_v<ColorPolicy, NoColor>) {
+                d.setColors(static_cast<const ColorPolicy&>(*this).value);
+            }
             draw_rect(d, x_, y_, w_, h_);
-            d.setColors(Colors{});
+            if constexpr (!std::is_same_v<ColorPolicy, NoColor>) {
+                d.setColors(Colors{});
+            }
         }
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
@@ -374,13 +433,32 @@ private:
     std::tuple<const Children...> children_;
 };
 
-template <typename... Children>
-class Row : public Widget {
+// CTAD: WithColor as the first argument selects the colored specialization;
+// LayoutConfig (or nothing) keeps the default NoColor base.
+template <typename... C> Column(const C&...) -> Column<NoColor, C...>;
+template <typename... C> Column(LayoutConfig, const C&...) -> Column<NoColor, C...>;
+template <typename... C> Column(WithColor, const C&...) -> Column<WithColor, C...>;
+template <typename... C> Column(WithColor, LayoutConfig, const C&...) -> Column<WithColor, C...>;
+
+// Lay children left-to-right. Same EBO color pattern as Column.
+template <typename ColorPolicy = NoColor, typename... Children>
+class Row : public Widget, private ColorPolicy {
 public:
-    explicit Row(const Children&... children) : children_(children...) {}
+    explicit Row(const Children&... children)
+        : config_{}, children_(children...) {}
 
     Row(LayoutConfig config, const Children&... children)
         : config_(config), children_(children...) {}
+
+    template <typename CP = ColorPolicy,
+              std::enable_if_t<std::is_same_v<CP, WithColor>, int> = 0>
+    Row(WithColor color, const Children&... children)
+        : ColorPolicy(color), config_{}, children_(children...) {}
+
+    template <typename CP = ColorPolicy,
+              std::enable_if_t<std::is_same_v<CP, WithColor>, int> = 0>
+    Row(WithColor color, LayoutConfig config, const Children&... children)
+        : ColorPolicy(color), config_(config), children_(children...) {}
 
     void measure(uint16_t avail_w, uint16_t avail_h) const override {
         const uint16_t iw = config_.border
@@ -437,9 +515,13 @@ public:
         measure(w_, h_);
         layout(x_, y_, w_, h_);
         if (config_.border) {
-            d.setColors(config_.color);
+            if constexpr (!std::is_same_v<ColorPolicy, NoColor>) {
+                d.setColors(static_cast<const ColorPolicy&>(*this).value);
+            }
             draw_rect(d, x_, y_, w_, h_);
-            d.setColors(Colors{});
+            if constexpr (!std::is_same_v<ColorPolicy, NoColor>) {
+                d.setColors(Colors{});
+            }
         }
         std::apply([&](const auto&... c) { (c.render(d), ...); }, children_);
     }
@@ -452,6 +534,13 @@ private:
     LayoutConfig config_;
     std::tuple<const Children...> children_;
 };
+
+// CTAD: same pattern as Column — WithColor first selects the colored
+// specialization, LayoutConfig (or nothing) keeps the default NoColor base.
+template <typename... C> Row(const C&...) -> Row<NoColor, C...>;
+template <typename... C> Row(LayoutConfig, const C&...) -> Row<NoColor, C...>;
+template <typename... C> Row(WithColor, const C&...) -> Row<WithColor, C...>;
+template <typename... C> Row(WithColor, LayoutConfig, const C&...) -> Row<WithColor, C...>;
 
 class Screen : public Widget {
 public:

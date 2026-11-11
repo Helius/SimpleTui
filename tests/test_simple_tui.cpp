@@ -147,7 +147,7 @@ TEST_CASE("Text renders with its TextConfig colors and restores defaults") {
         mutable stui::Colors printed{};
     };
 
-    stui::Text green{"hi", {.color = {.fg = stui::color_green}}};
+    stui::Text green{stui::WithColor{.value = {.fg = stui::color_green}}, "hi"};
     green.measure(5, 1);
     green.layout(0, 0, 5, 1);
 
@@ -168,7 +168,7 @@ TEST_CASE("Text renders with its TextConfig colors and restores defaults") {
 }
 
 TEST_CASE("Text with a border measures and renders its text inside") {
-    stui::Text t{"hi", {.border = true}};
+    stui::Text t{stui::TextConfig{.border = true}, "hi"};
     t.measure(10, 10);
     CHECK(t.measured_width() == 4);  // "hi" + two border columns
     CHECK(t.measured_height() == 3); // one content row + two border rows
@@ -187,7 +187,7 @@ TEST_CASE("Text with a border measures and renders its text inside") {
 }
 
 TEST_CASE("Text with a border elides inside the interior width") {
-    stui::Text t{"hello", {.border = true}};
+    stui::Text t{stui::TextConfig{.border = true}, "hello"};
     t.measure(5, 3); // clamped to the available width
     CHECK(t.measured_width() == 5);
     CHECK(t.measured_height() == 3);
@@ -242,14 +242,14 @@ TEST_CASE("Text scroll offset skips leading characters") {
 }
 
 TEST_CASE("Column measure is max width by sum height") {
-    stui::Column<stui::Text, stui::Text> col{stui::Text{"hello"}, stui::Text{"world"}};
+    stui::Column<stui::NoColor, stui::Text<>, stui::Text<>> col{stui::Text{"hello"}, stui::Text{"world"}};
     col.measure(80, 24);
     CHECK(col.measured_width() == 5);
     CHECK(col.measured_height() == 2);
 }
 
 TEST_CASE("Column stacks children vertically") {
-    stui::Column<stui::Text, stui::Text> col{stui::Text{"hello"}, stui::Text{"world"}};
+    stui::Column<stui::NoColor, stui::Text<>, stui::Text<>> col{stui::Text{"hello"}, stui::Text{"world"}};
     col.measure(80, 24);
     col.layout(0, 0, 80, 2);
 
@@ -339,14 +339,14 @@ TEST_CASE("Column measures bordered columns by their content") {
 }
 
 TEST_CASE("Row measure is sum width plus spacing by max height") {
-    stui::Row<stui::Text, stui::Text> row{stui::Text{"ab"}, stui::Text{"cd"}};
+    stui::Row<stui::NoColor, stui::Text<>, stui::Text<>> row{stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
     CHECK(row.measured_width() == 4); // 2 + 0 (default spacing) + 2
     CHECK(row.measured_height() == 1);
 }
 
 TEST_CASE("Row places children horizontally with no space by default") {
-    stui::Row<stui::Text, stui::Text> row{stui::Text{"ab"}, stui::Text{"cd"}};
+    stui::Row<stui::NoColor, stui::Text<>, stui::Text<>> row{stui::Text{"ab"}, stui::Text{"cd"}};
     row.measure(80, 24);
     row.layout(0, 0, 80, 1);
 
@@ -397,7 +397,7 @@ TEST_CASE("Column custom spacing separates children vertically") {
 }
 
 TEST_CASE("Row places Texts back-to-back") {
-    stui::Row<stui::Text, stui::Text, stui::Text> row{
+    stui::Row<stui::NoColor, stui::Text<>, stui::Text<>, stui::Text<>> row{
         stui::Text{"dist: "}, stui::Text{"10"}, stui::Text{" m"}};
 
     row.measure(14, 1);
@@ -411,7 +411,7 @@ TEST_CASE("Row places Texts back-to-back") {
 
 TEST_CASE("Row repositions children when a Text buffer grows") {
     char value[4] = "0";
-    stui::Row<stui::Text, stui::Text, stui::Text> row{
+    stui::Row<stui::NoColor, stui::Text<>, stui::Text<>, stui::Text<>> row{
         stui::Text{"dist: "}, stui::Text{value}, stui::Text{" m"}};
 
     row.measure(14, 1);
@@ -430,7 +430,7 @@ TEST_CASE("Row repositions children when a Text buffer grows") {
 TEST_CASE("Row accepts a LayoutConfig first argument via CTAD and draws a border") {
     stui::Row row{{.border = true}, stui::Text{"ab"}, stui::Text{"cd"}};
     static_assert(
-        std::is_same_v<decltype(row), stui::Row<stui::Text, stui::Text>>);
+        std::is_same_v<decltype(row), stui::Row<stui::NoColor, stui::Text<>, stui::Text<>>>);
 
     row.measure(10, 3);
     CHECK(row.measured_width() == 6);  // "abcd" + two border columns
@@ -472,7 +472,8 @@ TEST_CASE("Row renders its border with the LayoutConfig color") {
     const stui::Colors borderColors{.fg = stui::color_green,
                                     .bg = stui::color_blue};
     stui::Row row{
-        {.border = true, .color = borderColors},
+        stui::WithColor{.value = borderColors},
+        {.border = true},
         stui::Text{"ab"},
         stui::Text{"cd"}};
     row.measure(10, 3);
@@ -515,7 +516,8 @@ TEST_CASE("Column renders its border with the LayoutConfig color") {
     const stui::Colors borderColors{.fg = stui::color_yellow,
                                     .bg = stui::color_blue};
     stui::Column col{
-        {.border = true, .color = borderColors},
+        stui::WithColor{.value = borderColors},
+        {.border = true},
         stui::Text{"ab"},
         stui::Text{"cd"}};
     col.measure(6, 10);
@@ -538,7 +540,7 @@ TEST_CASE("Column renders its border with the LayoutConfig color") {
 TEST_CASE("Column accepts a LayoutConfig first argument via CTAD and draws a border") {
     stui::Column col{{.border = true}, stui::Text{"ab"}, stui::Text{"cd"}};
     static_assert(std::is_same_v<decltype(col),
-                                 stui::Column<stui::Text, stui::Text>>);
+                                 stui::Column<stui::NoColor, stui::Text<>, stui::Text<>>>);
 
     col.measure(6, 10);
     CHECK(col.measured_width() == 4);  // "ab"/"cd" + two border columns
@@ -679,7 +681,7 @@ TEST_CASE("SimpleTui::loop redraws only after the 500 ms interval and animates")
 }
 
 TEST_CASE("Screen forwards measure, layout and render to its root") {
-    stui::Column<stui::Text, stui::Text> root{stui::Text{"hi"}, stui::Text{"yo"}};
+    stui::Column<stui::NoColor, stui::Text<>, stui::Text<>> root{stui::Text{"hi"}, stui::Text{"yo"}};
     stui::Screen screen{root};
 
     screen.measure(5, 2);
@@ -696,7 +698,7 @@ TEST_CASE("SimpleTui::setScreen lays out and renders a screen") {
     TestDisplay display;
     stui::SimpleTui<5, 2> tui(display);
 
-    stui::Column<stui::Text, stui::Text> root{stui::Text{"hi"}, stui::Text{"yo"}};
+    stui::Column<stui::NoColor, stui::Text<>, stui::Text<>> root{stui::Text{"hi"}, stui::Text{"yo"}};
     stui::Screen screen{root};
 
     tui.setScreen(screen);
@@ -708,9 +710,9 @@ TEST_CASE("SimpleTui::setScreen lays out and renders a screen") {
 TEST_CASE("SimpleTui::setScreen accepts lvalues and rejects rvalues") {
     using Tui = stui::SimpleTui<5, 2>;
 
-    CHECK(can_set_screen<Tui, stui::Text&>::value);
-    CHECK(can_set_screen<Tui, const stui::Text&>::value);
-    CHECK_FALSE(can_set_screen<Tui, stui::Text>::value);
+    CHECK(can_set_screen<Tui, stui::Text<>&>::value);
+    CHECK(can_set_screen<Tui, const stui::Text<>&>::value);
+    CHECK_FALSE(can_set_screen<Tui, stui::Text<>>::value);
 }
 
 TEST_CASE("SimpleTui constructor clears the display") {
@@ -778,4 +780,14 @@ TEST_CASE("Column gives earlier children their full height before shrinking late
         "└─┘",
     };
     CHECK(display.lines() == expected);
+}
+
+TEST_CASE("EBO: NoColor widgets are smaller than WithColor widgets") {
+    // NoColor is an empty base — EBO gives it zero bytes. WithColor stores a
+    // Colors (6 bytes), so the colored specialization must be larger.
+    static_assert(sizeof(stui::Text<stui::NoColor>) < sizeof(stui::Text<stui::WithColor>));
+    static_assert(sizeof(stui::Column<stui::NoColor, stui::Text<>>)
+                  < sizeof(stui::Column<stui::WithColor, stui::Text<>>));
+    static_assert(sizeof(stui::Row<stui::NoColor, stui::Text<>>)
+                  < sizeof(stui::Row<stui::WithColor, stui::Text<>>));
 }

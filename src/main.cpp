@@ -44,14 +44,15 @@ int main() {
             Text{""},
             Text{"battery: 3.9V"},
             Text{"WIFI: -66 dBm"},
-            Text{"x,y: 0,0", {.border = true}}
+            Text{TextConfig{.border = true}, "x,y: 0,0"}
         },
         Column{
-          {.border = true, .color = {.fg = color_green, .bg = color_blue}},
+          WithColor{{.fg = color_green, .bg = color_blue}},
+          {.border = true},
           Row{
-            Text{"dist: ", {.color = {.bg = color_blue}}},
-            Text{distance, {.color = {.fg = color_red, .bg = color_blue}}},
-            Text{" m", {.color = {.bg = color_blue}}},
+            Text{WithColor{{.bg = color_blue}}, "dist: "},
+            Text{WithColor{{.fg = color_red, .bg = color_blue}}, distance},
+            Text{WithColor{{.bg = color_blue}}, " m"},
           },
           Text{"tempr: 10"},
           Text{"press: 1013 hPa"},

@@ -43,7 +43,7 @@ static const auto root = stui::Column{
     stui::Row{
         {.spacing = 1},
         stui::Text{"a"},
-        stui::Text{"b", {.border = true}},
+        stui::Text{stui::TextConfig{.border = true}, "b"},
     },
 };
 
